@@ -2,7 +2,7 @@ import 'server-only'
 import { cache } from 'react'
 import { redirect } from 'next/navigation'
 import { readSession, type Session } from '@/lib/auth/session'
-import { can, type Permission } from '@/lib/auth/rbac'
+import { can, resolveLiveRole, type Permission } from '@/lib/auth/rbac'
 import { db } from '@/lib/supabase/admin'
 
 export type TenantRecord = {
@@ -31,13 +31,31 @@ export const getTenant = cache(async (tenantId: string): Promise<TenantRecord | 
 
 export type AppContext = { session: Session; tenant: TenantRecord }
 
+/** JWT role is a cache. Demo keeps it; live tenants reload administrators.role_key. */
+export async function withLiveRole(session: Session): Promise<Session | null> {
+  if (session.demo) return session
+  const { data: admin } = await db()
+    .from('administrators')
+    .select('role_key')
+    .eq('tenant_id', session.tenantId)
+    .eq('user_id', session.userId)
+    .maybeSingle()
+  try {
+    return { ...session, role: resolveLiveRole(session, admin?.role_key) }
+  } catch {
+    return null
+  }
+}
+
 /** Requires a signed-in session with a tenant. Redirects to the sign-in page otherwise. */
 export async function requireContext(): Promise<AppContext> {
   const session = await getSession()
   if (!session) redirect('/auth/login')
   const tenant = await getTenant(session.tenantId)
   if (!tenant) redirect('/auth/login?error=tenant_missing')
-  return { session, tenant }
+  const live = await withLiveRole(session)
+  if (!live) redirect('/auth/login?error=not_an_administrator')
+  return { session: live, tenant }
 }
 
 /** Same as requireContext but also enforces onboarding completion. */

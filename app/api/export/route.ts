@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { getSession, getTenant } from '@/lib/auth/current'
+import { getSession, getTenant, withLiveRole } from '@/lib/auth/current'
 import { can } from '@/lib/auth/rbac'
 import { listGuests, type GuestFilters } from '@/lib/data/guests'
 import { listDomains } from '@/lib/data/domains'
@@ -14,8 +14,10 @@ function csv(rows: (string | number | null | undefined | boolean)[][]) {
 }
 
 export async function GET(req: NextRequest) {
-  const session = await getSession()
-  if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const raw = await getSession()
+  if (!raw) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const session = await withLiveRole(raw)
+  if (!session) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   if (!can(session.role, 'export')) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   const tenant = await getTenant(session.tenantId)
   if (!tenant) return NextResponse.json({ error: 'tenant_missing' }, { status: 404 })
@@ -67,6 +69,7 @@ export async function GET(req: NextRequest) {
       ...resources.map((r) => [r.display_name, r.resource_type, r.is_sensitive, r.sensitivity_category, r.internal_member_count, r.external_member_count, r.visibility, r.web_url]),
     ])
   } else if (type === 'audit') {
+    if (!can(session.role, 'audit.view')) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
     const events: Awaited<ReturnType<typeof listAudit>>['events'] = []
     for (let page = 1; page <= 40; page++) {
       const res = await listAudit(tenant.id, { page })
