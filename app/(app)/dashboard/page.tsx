@@ -52,6 +52,7 @@ export default async function DashboardPage() {
         eyebrow={tenant.display_name}
         title="External access posture"
         description={`${formatNumber(cur.total_guests)} external identities across ${cur.domains} external domains. ${exposurePct}% are critical or high risk.`}
+        subtitle="Governing external identities today. Privileged, non-human, and AI agent types will use the same reviews and audit model."
         actions={
           <>
             <Button variant="outline" nativeButton={false} render={<Link href="/reports" />}>

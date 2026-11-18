@@ -84,10 +84,28 @@ export function AppSidebar({ user, tenant, counts }: { user: SidebarUser; tenant
       const active = isActive(item.href)
       return (
         <SidebarMenuItem key={item.href}>
-          <SidebarMenuButton isActive={active} tooltip={item.label} render={<Link href={item.href} aria-current={active ? 'page' : undefined} />}>
+          <SidebarMenuButton
+            isActive={active}
+            tooltip={item.label}
+            render={
+              <Link
+                href={item.href}
+                aria-current={active ? 'page' : undefined}
+                aria-describedby={item.href === '/guests' ? 'nav-external-identities-footnote' : undefined}
+              />
+            }
+          >
             <NavIcon icon={item.icon} />
             <span>{item.label}</span>
           </SidebarMenuButton>
+          {item.href === '/guests' && (
+            <p
+              id="nav-external-identities-footnote"
+              className="group-data-[collapsible=icon]:hidden px-2 pb-1.5 pl-8 text-muted-foreground text-xs leading-snug"
+            >
+              More identity types coming
+            </p>
+          )}
           {badge > 0 && badgeKey && (
             <Tooltip>
               <TooltipTrigger

@@ -23,6 +23,7 @@ export function GuestTable({
   exportHref,
   scopeCounts,
   defaultReviewerEmails = [],
+  emptyMessage = 'No identities match these filters.',
 }: {
   guests: Guest[]
   canReview: boolean
@@ -31,6 +32,7 @@ export function GuestTable({
   /** Tenant-wide counts for the broad scope options. Omit on pages already scoped to one domain, organization or resource. */
   scopeCounts?: { all_external: number; high_critical: number }
   defaultReviewerEmails?: string[]
+  emptyMessage?: string
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [reviewOpen, setReviewOpen] = useState(false)
@@ -172,7 +174,7 @@ export function GuestTable({
               <TableRow>
                 <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">
                   <UserX className="mx-auto mb-2 size-5" />
-                  No identities match these filters.
+                  {emptyMessage}
                 </TableCell>
               </TableRow>
             )}
