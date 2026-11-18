@@ -9,6 +9,7 @@ import { randomToken } from '@/lib/auth/crypto'
 import { GraphClient } from '@/lib/graph/client'
 import { deleteUser, removeGroupMember, removeGroupOwner, revokeSessions, setAccountEnabled } from '@/lib/graph/queries'
 import { rescoreTenant } from '@/lib/scan/engine'
+import { requireIdentityId } from '@/lib/identity/governance'
 
 export type RemediationType = 'remove_from_resources' | 'disable_guest' | 'remove_all_access' | 'delete_guest'
 
@@ -40,11 +41,13 @@ export async function remediateGuest(input: { guestId: string; actionType: Remed
     const enforcementOn = tenant.is_demo || tenant.settings.enforcement_mode === 'enforce'
     const canExecute = enforcementOn && can(session.role, 'remediation.execute')
 
+    const identityId = requireIdentityId(guest)
     const { data: action } = await supabase
       .from('remediation_actions')
       .insert({
         tenant_id: tenant.id,
         guest_id: input.guestId,
+        identity_id: identityId,
         action_type: input.actionType,
         target_resources: targets.map((t) => ({ id: t.id, name: t.display_name, type: t.resource_type })),
         status: canExecute ? 'executing' : 'pending',
@@ -114,7 +117,7 @@ export async function remediateGuest(input: { guestId: string; actionType: Remed
     }
     if (input.actionType === 'remove_all_access') guestUpdate.review_status = 'removed'
     if (Object.keys(guestUpdate).length) await supabase.from('guest_identities').update(guestUpdate).eq('id', input.guestId)
-    await supabase.from('guest_activity').insert({ tenant_id: tenant.id, guest_id: input.guestId, activity_type: input.actionType === 'delete_guest' ? 'disabled' : 'membership_removed', details: { action: input.actionType, resources: result.removed, by: session.email } })
+    await supabase.from('guest_activity').insert({ tenant_id: tenant.id, guest_id: input.guestId, identity_id: identityId, activity_type: input.actionType === 'delete_guest' ? 'disabled' : 'membership_removed', details: { action: input.actionType, resources: result.removed, by: session.email } })
     await supabase.from('remediation_actions').update({ status: (result.errors as string[]).length ? 'failed' : 'completed', executed_at: now, result }).eq('id', action!.id)
     await audit(session, { action: 'remediation.executed', targetType: 'guest', targetId: input.guestId, targetLabel: guest.email ?? guest.display_name, previousState: { memberships: targets.length, account_enabled: guest.account_enabled }, newState: { ...result, ...guestUpdate }, reason: input.reason, correlationId })
     await rescoreTenant(tenant.id, null)

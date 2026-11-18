@@ -224,6 +224,8 @@ export type ExternalOrganization = {
 export type Membership = {
   id: string
   guest_id: string
+  identity_id: string | null
+  account_id: string | null
   resource_id: string
   membership_type: 'member' | 'owner'
   first_seen_at: string
@@ -370,6 +372,7 @@ export type ReviewItem = {
   id: string
   review_id: string
   guest_id: string
+  identity_id: string | null
   status: 'pending' | 'decided' | 'actioned'
   decision: 'approve' | 'remove' | 'extend' | 'investigate' | null
   final_action: string | null
@@ -395,6 +398,7 @@ export type AuditEvent = {
 export type Finding = {
   id: string
   guest_id: string | null
+  identity_id: string | null
   resource_id: string | null
   external_domain_id: string | null
   severity: RiskLevel
