@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { persistGuestRiskUpdates, persistMembershipUpserts, persistRiskFindings, persistRiskScores } from '@/lib/scan/persist'
+import {
+  persistGuestRiskUpdates,
+  persistIdentityRiskUpdates,
+  persistMembershipUpserts,
+  persistRiskFindings,
+  persistRiskScores,
+} from '@/lib/scan/persist'
 
 describe('persistGuestRiskUpdates', () => {
   it('throws when a guest risk update fails', async () => {
@@ -12,6 +18,20 @@ describe('persistGuestRiskUpdates', () => {
         { id: 'g2', risk_score: 90, risk_level: 'critical', risk_factors: [], recommended_action: 'remove' },
       ]),
     ).rejects.toThrow('guest_identities risk update g2: timeout')
+  })
+})
+
+describe('persistIdentityRiskUpdates', () => {
+  it('throws when a hub risk update fails', async () => {
+    const updateOne = vi.fn(async (row: { id: string }) =>
+      row.id === 'id-2' ? { error: { message: 'row locked' } } : { error: null },
+    )
+    await expect(
+      persistIdentityRiskUpdates(updateOne, [
+        { id: 'id-1', risk_score: 1, risk_level: 'low', recommended_action: 'keep' },
+        { id: 'id-2', risk_score: 90, risk_level: 'critical', recommended_action: 'remove' },
+      ]),
+    ).rejects.toThrow('identities risk update id-2: row locked')
   })
 })
 

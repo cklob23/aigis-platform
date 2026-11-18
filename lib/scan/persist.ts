@@ -24,6 +24,23 @@ export async function persistGuestRiskUpdates(
   }
 }
 
+export type IdentityRiskUpdate = {
+  id: string
+  risk_score: number
+  risk_level: string
+  recommended_action: string
+}
+
+export async function persistIdentityRiskUpdates(
+  updateOne: (row: IdentityRiskUpdate) => WriteTask,
+  updates: IdentityRiskUpdate[],
+) {
+  for (const batch of chunk(updates, 200)) {
+    const results = await Promise.all(batch.map((row) => updateOne(row)))
+    results.forEach((result, i) => mustWrite(`identities risk update ${batch[i].id}`, result))
+  }
+}
+
 export async function persistRiskScores(
   insertBatch: (rows: unknown[]) => WriteTask,
   scoreRows: unknown[],

@@ -14,7 +14,7 @@ import {
   type GraphUser,
 } from '@/lib/graph/queries'
 import { detectSensitivity } from '@/lib/risk/sensitivity'
-import { computeRisk, DEFAULT_RISK_POLICY, type RiskPolicyConfig } from '@/lib/risk/engine'
+import { computeIdentityRisk, identityRiskPatch, DEFAULT_RISK_POLICY, type RiskPolicyConfig } from '@/lib/risk/engine'
 import type { DomainClassification, ExternalDomain, Guest, RelationshipType, Resource, ResourceType } from '@/lib/types'
 import { audit } from '@/lib/audit'
 
@@ -37,6 +37,7 @@ import { evaluateAlertRules } from '@/lib/alerts/evaluate'
 import { mustWrite } from '@/lib/supabase/write'
 import {
   persistGuestRiskUpdates,
+  persistIdentityRiskUpdates,
   persistMembershipUpserts,
   persistRiskFindings,
   persistRiskScores,
@@ -92,10 +93,13 @@ export async function rescoreTenant(tenantId: string, scanJobId: string | null, 
   }
 
   const updates: Partial<Guest>[] = []
+  const identityUpdates: { id: string; risk_score: number; risk_level: Guest['risk_level']; recommended_action: Guest['recommended_action'] }[] = []
   const scoreRows: Record<string, unknown>[] = []
   const counts = { critical: 0, high: 0, medium: 0, low: 0 }
   for (const g of (guests ?? []) as Guest[]) {
-    const risk = computeRisk(
+    const identityId = requireIdentityId(g)
+    const risk = computeIdentityRisk(
+      g.identity_class ?? 'external',
       {
         accountEnabled: g.account_enabled,
         invitationStatus: g.invitation_status,
@@ -113,14 +117,16 @@ export async function rescoreTenant(tenantId: string, scanJobId: string | null, 
     )
     counts[risk.level]++
     updates.push({ id: g.id, risk_score: risk.score, risk_level: risk.level, risk_factors: risk.factors, recommended_action: risk.recommendedAction })
-    scoreRows.push({ tenant_id: tenantId, guest_id: g.id, identity_id: requireIdentityId(g), scan_job_id: scanJobId, score: risk.score, level: risk.level, factors: risk.factors })
+    identityUpdates.push({ id: identityId, ...identityRiskPatch(risk) })
+    scoreRows.push({ tenant_id: tenantId, guest_id: g.id, identity_id: identityId, scan_job_id: scanJobId, score: risk.score, level: risk.level, factors: risk.factors })
   }
   await persistGuestRiskUpdates(
     (u) =>
       supabase
         .from('guest_identities')
         .update({ risk_score: u.risk_score, risk_level: u.risk_level, risk_factors: u.risk_factors, recommended_action: u.recommended_action })
-        .eq('id', u.id),
+        .eq('id', u.id)
+        .eq('tenant_id', tenantId),
     updates.map((u) => ({
       id: u.id as string,
       risk_score: u.risk_score as number,
@@ -128,6 +134,15 @@ export async function rescoreTenant(tenantId: string, scanJobId: string | null, 
       risk_factors: u.risk_factors,
       recommended_action: u.recommended_action as string,
     })),
+  )
+  await persistIdentityRiskUpdates(
+    (u) =>
+      supabase
+        .from('identities')
+        .update({ risk_score: u.risk_score, risk_level: u.risk_level, recommended_action: u.recommended_action })
+        .eq('id', u.id)
+        .eq('tenant_id', tenantId),
+    identityUpdates,
   )
   await persistRiskScores((rows) => supabase.from('risk_scores').insert(rows), scoreRows)
   return counts
