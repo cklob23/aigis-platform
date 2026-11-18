@@ -3,7 +3,8 @@ import { db } from '@/lib/supabase/admin'
 import { detectSensitivity } from '@/lib/risk/sensitivity'
 import { generateFindings, rescoreTenant, snapshotMetrics } from '@/lib/scan/engine'
 import { classifyExternalIdentity } from '@/lib/identity/classify'
-import type { DomainClassification, RelationshipType, ResourceType } from '@/lib/types'
+import { hubRowsFromGuest, type GuestHubSource } from '@/lib/identity/provision'
+import { DEFAULT_AI_SETTINGS, type DomainClassification, type RelationshipType, type ResourceType } from '@/lib/types'
 
 export const DEMO_MS_TENANT_ID = 'demo-northwind-health'
 
@@ -141,7 +142,7 @@ async function seedDemoTenant() {
       onboarding_completed_at: daysAgo(95),
       last_scan_at: daysAgo(0.2),
       is_demo: true,
-      settings: { risk_policy: { inactiveDays: 90, staleDays: 180, reviewDays: 365 }, scan_schedule: 'daily', notifications: { email: true, weekly_digest: true } },
+      settings: { risk_policy: { inactiveDays: 90, staleDays: 180, reviewDays: 365 }, scan_schedule: 'daily', notifications: { email: true, weekly_digest: true }, ai: DEFAULT_AI_SETTINGS },
     })
     .select('id')
     .single()
@@ -292,7 +293,10 @@ async function seedDemoTenant() {
       tenantVerifiedDomains: ['northwindhealth.com', 'northwind.onmicrosoft.com'],
       organizationRelationship: org?.relationship_type ?? null,
     })
+    const id = crypto.randomUUID()
     guests.push({
+      id,
+      identity_id: id,
       tenant_id: tenantId,
       ms_object_id: `demo-guest-${i}`,
       display_name: `${first} ${last}`,
@@ -320,6 +324,13 @@ async function seedDemoTenant() {
       first_seen_at: daysAgo(Math.min(95, ageDays)),
       last_seen_at: daysAgo(0.2),
     })
+  }
+  const hubs = guests.map((g) => hubRowsFromGuest(g as GuestHubSource))
+  for (let i = 0; i < hubs.length; i += 100) {
+    await supabase.from('identities').insert(hubs.slice(i, i + 100).map((h) => h.identity))
+  }
+  for (let i = 0; i < hubs.length; i += 100) {
+    await supabase.from('identity_accounts').insert(hubs.slice(i, i + 100).map((h) => h.account))
   }
   const insertedGuests: { id: string; ms_object_id: string }[] = []
   for (let i = 0; i < guests.length; i += 100) {
