@@ -3,12 +3,14 @@ import { db } from '@/lib/supabase/admin'
 import { loadMailTenant, sendMail, publicOrigin } from '@/lib/email/mailer'
 import { alertDigest, type AlertEmailItem } from '@/lib/email/templates'
 import { ALERT_TRIGGER_LABELS, type AlertRule, type ApprovalState, type RiskLevel } from '@/lib/types'
+import { requireIdentityId } from '@/lib/identity/governance'
 
 const RISK_ORDER: Record<RiskLevel, number> = { low: 0, medium: 1, high: 2, critical: 3 }
 const DAY = 86_400_000
 
 type GuestRow = {
   id: string
+  identity_id: string | null
   display_name: string | null
   email: string | null
   domain: string | null
@@ -67,7 +69,7 @@ export async function evaluateAlertRules(tenantId: string, opts: EvaluateOptions
 
   const needsGuests = rules.some((r) => !['review_overdue', 'scan_failed'].includes(r.trigger_type))
   const guests: GuestRow[] = needsGuests
-    ? (((await supabase.from('guest_identities').select('id,display_name,email,domain,risk_level,risk_score,first_seen_at,last_sign_in_at,created_at_ms,external_organization_id,account_enabled').eq('tenant_id', tenantId).is('removed_at', null)).data ?? []) as GuestRow[])
+    ? (((await supabase.from('guest_identities').select('id,identity_id,display_name,email,domain,risk_level,risk_score,first_seen_at,last_sign_in_at,created_at_ms,external_organization_id,account_enabled').eq('tenant_id', tenantId).is('removed_at', null)).data ?? []) as GuestRow[])
     : []
   const guestById = new Map(guests.map((g) => [g.id, g]))
 
@@ -106,6 +108,9 @@ export async function evaluateAlertRules(tenantId: string, opts: EvaluateOptions
           title: c.title,
           description: c.description,
           guest_id: c.guest_id ?? null,
+          identity_id: c.guest_id
+            ? requireIdentityId({ id: c.guest_id, identity_id: guestById.get(c.guest_id)?.identity_id })
+            : null,
           resource_id: c.resource_id ?? null,
           dedupe_key: c.dedupe_key,
           metadata: { ...(c.metadata ?? {}), scan_job_id: opts.scanJobId ?? null },

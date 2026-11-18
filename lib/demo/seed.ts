@@ -4,6 +4,8 @@ import { detectSensitivity } from '@/lib/risk/sensitivity'
 import { generateFindings, rescoreTenant, snapshotMetrics } from '@/lib/scan/engine'
 import { classifyExternalIdentity } from '@/lib/identity/classify'
 import { hubRowsFromGuest, type GuestHubSource } from '@/lib/identity/provision'
+import { withIdentityId, withMembershipIds } from '@/lib/identity/governance'
+import { loadGovernanceMaps } from '@/lib/identity/governance-maps'
 import { DEFAULT_AI_SETTINGS, type DomainClassification, type RelationshipType, type ResourceType } from '@/lib/types'
 
 export const DEMO_MS_TENANT_ID = 'demo-northwind-health'
@@ -332,13 +334,14 @@ async function seedDemoTenant() {
   for (let i = 0; i < hubs.length; i += 100) {
     await supabase.from('identity_accounts').insert(hubs.slice(i, i + 100).map((h) => h.account))
   }
-  const insertedGuests: { id: string; ms_object_id: string }[] = []
+  const insertedGuests: { id: string; ms_object_id: string; identity_id: string }[] = []
   for (let i = 0; i < guests.length; i += 100) {
-    const { data } = await supabase.from('guest_identities').insert(guests.slice(i, i + 100)).select('id,ms_object_id')
-    insertedGuests.push(...((data ?? []) as { id: string; ms_object_id: string }[]))
+    const { data } = await supabase.from('guest_identities').insert(guests.slice(i, i + 100)).select('id,ms_object_id,identity_id')
+    insertedGuests.push(...((data ?? []) as { id: string; ms_object_id: string; identity_id: string }[]))
   }
   insertedGuests.sort((a, b) => Number(a.ms_object_id.split('-').pop()) - Number(b.ms_object_id.split('-').pop()))
 
+  const maps = await loadGovernanceMaps(tenantId, insertedGuests)
   const sensitiveResources = resources.filter((x) => x.is_sensitive && x.resource_type !== 'sharepoint_site')
   const normalResources = resources.filter((x) => !x.is_sensitive && x.resource_type !== 'sharepoint_site')
   const memberships: Record<string, unknown>[] = []
@@ -353,11 +356,11 @@ async function seedDemoTenant() {
       chosen.add(res.id)
       const isOwner = r() < 0.05
       const firstSeen = daysAgo(Math.floor(r() * 90))
-      memberships.push({ tenant_id: tenantId, guest_id: g.id, resource_id: res.id, membership_type: isOwner ? 'owner' : 'member', first_seen_at: firstSeen })
+      memberships.push(withMembershipIds({ tenant_id: tenantId, guest_id: g.id, resource_id: res.id, membership_type: isOwner ? 'owner' : 'member', first_seen_at: firstSeen }, maps))
       extCounts.set(res.id, (extCounts.get(res.id) ?? 0) + 1)
       const site = siteByGroup.get(res.id)
       if (site) {
-        memberships.push({ tenant_id: tenantId, guest_id: g.id, resource_id: site, membership_type: 'member', first_seen_at: firstSeen })
+        memberships.push(withMembershipIds({ tenant_id: tenantId, guest_id: g.id, resource_id: site, membership_type: 'member', first_seen_at: firstSeen }, maps))
         extCounts.set(site, (extCounts.get(site) ?? 0) + 1)
       }
     }
@@ -367,9 +370,9 @@ async function seedDemoTenant() {
 
   // Activity timeline samples
   const activity = insertedGuests.slice(0, 120).flatMap((g, i) => [
-    { tenant_id: tenantId, guest_id: g.id, activity_type: 'scanned', occurred_at: daysAgo(0.2), details: { scan: 'daily' } },
-    { tenant_id: tenantId, guest_id: g.id, activity_type: 'membership_added', occurred_at: daysAgo(10 + (i % 60)), details: { resource: RESOURCES[i % RESOURCES.length].name } },
-    ...(guests[i].last_sign_in_at ? [{ tenant_id: tenantId, guest_id: g.id, activity_type: 'sign_in', occurred_at: guests[i].last_sign_in_at as string, details: { app: ['Microsoft Teams', 'SharePoint Online', 'Outlook'][i % 3] } }] : []),
+    withIdentityId({ tenant_id: tenantId, guest_id: g.id, activity_type: 'scanned', occurred_at: daysAgo(0.2), details: { scan: 'daily' } }, maps),
+    withIdentityId({ tenant_id: tenantId, guest_id: g.id, activity_type: 'membership_added', occurred_at: daysAgo(10 + (i % 60)), details: { resource: RESOURCES[i % RESOURCES.length].name } }, maps),
+    ...(guests[i].last_sign_in_at ? [withIdentityId({ tenant_id: tenantId, guest_id: g.id, activity_type: 'sign_in', occurred_at: guests[i].last_sign_in_at as string, details: { app: ['Microsoft Teams', 'SharePoint Online', 'Outlook'][i % 3] } }, maps)] : []),
   ])
   for (let i = 0; i < activity.length; i += 200) await supabase.from('guest_activity').insert(activity.slice(i, i + 200))
 
@@ -436,7 +439,7 @@ async function seedDemoTenant() {
     })
     const decided = i < 9
     const decision = decided ? (['approve', 'remove', 'approve', 'extend', 'remove', 'approve', 'investigate', 'approve', 'remove'] as const)[i] : null
-    return { tenant_id: tenantId, review_id: review!.id, guest_id: gid, status: decided ? 'decided' : 'pending', decision, resources_snapshot: snap, decided_at: decided ? daysAgo(4 - i * 0.3) : null }
+    return withIdentityId({ tenant_id: tenantId, review_id: review!.id, guest_id: gid, status: decided ? 'decided' : 'pending', decision, resources_snapshot: snap, decided_at: decided ? daysAgo(4 - i * 0.3) : null }, maps)
   })
   await supabase.from('review_items').insert(reviewItems)
   await supabase.from('guest_identities').update({ review_status: 'pending' }).in('id', financeHrGuests.slice(9))
@@ -444,7 +447,7 @@ async function seedDemoTenant() {
   // Alerts and audit history
   const blockedGuests = insertedGuests.filter((_, i) => guestPlans[i].domain === 'ex-vendor-stratus.com')
   await supabase.from('alerts').insert([
-    ...blockedGuests.slice(0, 3).map((g) => ({ tenant_id: tenantId, alert_type: 'blocked_domain_access', severity: 'critical', title: 'Guest from blocked domain still has access', description: 'ex-vendor-stratus.com was blocked after contract termination.', guest_id: g.id })),
+    ...blockedGuests.slice(0, 3).map((g) => withIdentityId({ tenant_id: tenantId, alert_type: 'blocked_domain_access', severity: 'critical', title: 'Guest from blocked domain still has access', description: 'ex-vendor-stratus.com was blocked after contract termination.', guest_id: g.id }, maps)),
     { tenant_id: tenantId, alert_type: 'new_sensitive_access', severity: 'high', title: '3 new guests added to Board Materials', description: 'Detected in the last scan. Sponsors notified.', resource_id: resources.find((x) => x.display_name === 'Board Materials')?.id },
     { tenant_id: tenantId, alert_type: 'sponsor_disabled', severity: 'medium', title: 'Sponsor account disabled for 11 guests', description: 'Sponsor Dev Patel left the organization. Reassign or review these guests.' },
   ])

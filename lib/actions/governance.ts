@@ -7,6 +7,8 @@ import { can } from '@/lib/auth/rbac'
 import { db } from '@/lib/supabase/admin'
 import { audit } from '@/lib/audit'
 import { rescoreTenant } from '@/lib/scan/engine'
+import { withIdentityId } from '@/lib/identity/governance'
+import { loadGovernanceMaps } from '@/lib/identity/governance-maps'
 import { normalizeEmails } from '@/lib/email/mailer'
 import { isApprover, notifyApprovers, notifyRequester, notifyReviewers, remindReviewers, reviewWorkflowOf } from '@/lib/reviews/workflow'
 import type { DomainClassification, ResourceType, ReviewWorkflowSettings, ReviewScopeKind, ReviewReviewerKind, ReviewRecurrence, ReviewNoResponseAction } from '@/lib/types'
@@ -165,7 +167,8 @@ export async function createAccessReview(input: {
       list.push({ id: r.id, name: r.display_name, type: r.resource_type, sensitive: r.is_sensitive })
       snapByGuest.set(m.guest_id as string, list)
     }
-    await supabase.from('review_items').insert(input.guestIds.map((gid) => ({ tenant_id: tenant.id, review_id: review.id, guest_id: gid, resources_snapshot: snapByGuest.get(gid) ?? [] })))
+    const maps = await loadGovernanceMaps(tenant.id)
+    await supabase.from('review_items').insert(input.guestIds.map((gid) => withIdentityId({ tenant_id: tenant.id, review_id: review.id, guest_id: gid, resources_snapshot: snapByGuest.get(gid) ?? [] }, maps)))
     await supabase.from('guest_identities').update({ review_status: 'pending' }).eq('tenant_id', tenant.id).in('id', input.guestIds)
     await audit(session, { action: 'review.created', targetType: 'access_review', targetId: review.id, targetLabel: input.name, newState: { guests: input.guestIds.length, due_in_days: input.dueInDays, needs_approval: needsApproval, reviewers } })
 

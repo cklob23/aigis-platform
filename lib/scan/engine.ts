@@ -31,6 +31,8 @@ import { classifyExternalIdentity, defaultOrganizationName } from '@/lib/identit
 import { resolveCompany } from '@/lib/identity/company'
 import { planGuestInventory, type IncomingExternalGuest } from '@/lib/identity/ingest'
 import { writeGuestInventory } from '@/lib/identity/write-inventory'
+import { requireIdentityId, withMembershipIds } from '@/lib/identity/governance'
+import { loadGovernanceMaps } from '@/lib/identity/governance-maps'
 import { evaluateAlertRules } from '@/lib/alerts/evaluate'
 
 function domainOf(user: GraphUser) {
@@ -104,7 +106,7 @@ export async function rescoreTenant(tenantId: string, scanJobId: string | null, 
     )
     counts[risk.level]++
     updates.push({ id: g.id, risk_score: risk.score, risk_level: risk.level, risk_factors: risk.factors, recommended_action: risk.recommendedAction })
-    scoreRows.push({ tenant_id: tenantId, guest_id: g.id, scan_job_id: scanJobId, score: risk.score, level: risk.level, factors: risk.factors })
+    scoreRows.push({ tenant_id: tenantId, guest_id: g.id, identity_id: requireIdentityId(g), scan_job_id: scanJobId, score: risk.score, level: risk.level, factors: risk.factors })
   }
   for (const batch of chunk(updates, 200)) {
     await Promise.all(
@@ -156,7 +158,7 @@ export async function generateFindings(tenantId: string) {
   await supabase.from('risk_findings').update({ status: 'resolved', resolved_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('status', 'open')
   const { data: guests } = await supabase
     .from('guest_identities')
-    .select('id,display_name,email,risk_level,risk_factors,domain')
+    .select('id,identity_id,display_name,email,risk_level,risk_factors,domain')
     .eq('tenant_id', tenantId)
     .is('removed_at', null)
     .in('risk_level', ['critical', 'high'])
@@ -168,6 +170,7 @@ export async function generateFindings(tenantId: string) {
       {
         tenant_id: tenantId,
         guest_id: g.id,
+        identity_id: requireIdentityId({ id: g.id as string, identity_id: g.identity_id as string | null }),
         severity: g.risk_level,
         finding_type: top.key,
         title: `${g.display_name ?? g.email}: ${top.label}`,
@@ -311,6 +314,7 @@ export async function runScan(jobId: string, tenantId: string) {
       await progress('guests', 28, `${graphGuests.length} guests inventoried`, 'done')
 
       const guestIdByMs = new Map(inventory.guests.map((r) => [r.ms_object_id, r.id]))
+      const membershipMaps = await loadGovernanceMaps(tenantId, inventory.guests)
 
       await progress('groups', 30, 'Enumerating groups and teams…')
       const groups = await fetchGroups(g, (n) => progress('groups', Math.min(45, 30 + Math.floor(n / 100)), `${n} groups discovered…`))
@@ -352,12 +356,22 @@ export async function runScan(jobId: string, tenantId: string) {
             for (const m of members) {
               if (m.userType === 'Guest' && guestIdByMs.has(m.id)) {
                 external++
-                membershipRows.push({ tenant_id: tenantId, guest_id: guestIdByMs.get(m.id), resource_id: rid, membership_type: 'member', last_seen_at: now, removed_at: null })
+                membershipRows.push(
+                  withMembershipIds(
+                    { tenant_id: tenantId, guest_id: guestIdByMs.get(m.id) as string, resource_id: rid, membership_type: 'member', last_seen_at: now, removed_at: null },
+                    membershipMaps,
+                  ),
+                )
               } else internal++
             }
             for (const o of owners) {
               if (o.userType === 'Guest' && guestIdByMs.has(o.id)) {
-                membershipRows.push({ tenant_id: tenantId, guest_id: guestIdByMs.get(o.id), resource_id: rid, membership_type: 'owner', last_seen_at: now, removed_at: null })
+                membershipRows.push(
+                  withMembershipIds(
+                    { tenant_id: tenantId, guest_id: guestIdByMs.get(o.id) as string, resource_id: rid, membership_type: 'owner', last_seen_at: now, removed_at: null },
+                    membershipMaps,
+                  ),
+                )
               }
             }
             counts.set(rid, { internal, external, owners: owners.map((o) => ({ id: o.id, displayName: o.displayName ?? '', mail: o.mail })) })
@@ -446,7 +460,12 @@ export async function runScan(jobId: string, tenantId: string) {
                 .single()
               if (!appRow) return
               for (const a of guestAssignments) {
-                membershipRows.push({ tenant_id: tenantId, guest_id: guestIdByMs.get(a.principalId), resource_id: appRow.id, membership_type: 'member', last_seen_at: now, removed_at: null })
+                membershipRows.push(
+                  withMembershipIds(
+                    { tenant_id: tenantId, guest_id: guestIdByMs.get(a.principalId) as string, resource_id: appRow.id, membership_type: 'member', last_seen_at: now, removed_at: null },
+                    membershipMaps,
+                  ),
+                )
               }
             }),
           )
