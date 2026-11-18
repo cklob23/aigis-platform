@@ -2,6 +2,7 @@ import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/layout/app-sidebar'
 import { AppTopbar } from '@/components/layout/app-topbar'
 import { requireOnboarded } from '@/lib/auth/current'
+import { can } from '@/lib/auth/rbac'
 import { getSidebarCounts } from '@/lib/data/dashboard'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -13,6 +14,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         user={{ name: session.name, email: session.email, role: session.role, demo: session.demo }}
         tenant={{ displayName: tenant.display_name, primaryDomain: tenant.primary_domain, connectionStatus: tenant.connection_status }}
         counts={counts}
+        canViewAudit={can(session.role, 'audit.view')}
       />
       <SidebarInset className="min-w-0">
         <AppTopbar demo={session.demo} lastScanAt={tenant.last_scan_at} connectionStatus={tenant.connection_status} />

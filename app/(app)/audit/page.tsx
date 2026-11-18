@@ -17,6 +17,14 @@ const CATEGORIES = ['all', 'auth', 'tenant', 'scan', 'domain', 'review', 'remedi
 export default async function AuditPage({ searchParams }: { searchParams: Promise<{ q?: string; action?: string; page?: string }> }) {
   const sp = await searchParams
   const { session, tenant } = await requireOnboarded()
+  if (!can(session.role, 'audit.view')) {
+    return (
+      <PageHeader
+        title="Audit log"
+        description="Your role cannot view the audit log. Ask an administrator to grant Auditor or above."
+      />
+    )
+  }
   const { events, total, page, size } = await listAudit(tenant.id, { q: sp.q, action: sp.action, page: Number(sp.page ?? 1) })
 
   return (

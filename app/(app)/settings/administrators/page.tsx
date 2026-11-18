@@ -7,11 +7,13 @@ import { AddAdminForm } from '@/components/settings/add-admin-form'
 
 const CAPABILITIES: { label: string; roles: RoleKey[] }[] = [
   { label: 'View dashboards & inventory', roles: ['global_admin', 'gs_admin', 'security_analyst', 'auditor', 'read_only'] },
+  { label: 'View audit log', roles: ['global_admin', 'gs_admin', 'security_analyst', 'auditor'] },
   { label: 'Export reports & audit log', roles: ['global_admin', 'gs_admin', 'security_analyst', 'auditor'] },
   { label: 'Run scans, classify domains', roles: ['global_admin', 'gs_admin', 'security_analyst'] },
   { label: 'Create reviews & decide', roles: ['global_admin', 'gs_admin', 'security_analyst'] },
   { label: 'Request remediation', roles: ['global_admin', 'gs_admin', 'security_analyst'] },
   { label: 'Execute remediation in Microsoft 365', roles: ['global_admin', 'gs_admin'] },
+  { label: 'Merge identities (reserved)', roles: ['global_admin', 'gs_admin'] },
   { label: 'Manage policies, settings, administrators', roles: ['global_admin', 'gs_admin'] },
   { label: 'Billing & all tenants (MSP)', roles: ['global_admin'] },
 ]
