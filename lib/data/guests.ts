@@ -1,7 +1,8 @@
 import 'server-only'
 import { db } from '@/lib/supabase/admin'
 import { listIdentities, type IdentityFilters } from '@/lib/data/identities'
-import type { ExternalOrganization, Guest, Membership, Resource, RiskLevel } from '@/lib/types'
+import type { ExternalOrganization, Guest, Identity, Membership, Resource, RiskLevel } from '@/lib/types'
+import type { OwnerGuest } from '@/lib/identity/owner'
 import { RISK_CAUSES, type RiskCauseKey } from '@/lib/risk/recommendation'
 
 export type GuestFilters = IdentityFilters
@@ -35,7 +36,7 @@ export async function getGuestDetail(tenantId: string, guestId: string) {
   const supabase = db()
   const { data: guest } = await supabase.from('guest_identities').select('*').eq('tenant_id', tenantId).eq('id', guestId).maybeSingle()
   if (!guest) return null
-  const [memberships, activity, history, reviews, remediations, domain, organization] = await Promise.all([
+  const [memberships, activity, history, reviews, remediations, domain, organization, identityRow] = await Promise.all([
     supabase.from('resource_memberships').select('*, resource:resources(*)').eq('tenant_id', tenantId).eq('guest_id', guestId).is('removed_at', null),
     supabase.from('guest_activity').select('*').eq('tenant_id', tenantId).eq('guest_id', guestId).order('occurred_at', { ascending: false }).limit(30),
     supabase.from('risk_scores').select('score,level,calculated_at').eq('tenant_id', tenantId).eq('guest_id', guestId).order('calculated_at', { ascending: true }).limit(30),
@@ -43,10 +44,26 @@ export async function getGuestDetail(tenantId: string, guestId: string) {
     supabase.from('remediation_actions').select('*').eq('tenant_id', tenantId).eq('guest_id', guestId).order('created_at', { ascending: false }),
     guest.domain ? supabase.from('external_domains').select('*').eq('tenant_id', tenantId).eq('domain', guest.domain).maybeSingle() : Promise.resolve({ data: null }),
     guest.external_organization_id ? supabase.from('external_organizations').select('*').eq('tenant_id', tenantId).eq('id', guest.external_organization_id).maybeSingle() : Promise.resolve({ data: null }),
+    guest.identity_id
+      ? supabase.from('identities').select('*').eq('tenant_id', tenantId).eq('id', guest.identity_id).maybeSingle()
+      : Promise.resolve({ data: null }),
   ])
+  const identity = (identityRow.data ?? null) as Identity | null
+  let ownerGuest: OwnerGuest | null = null
+  if (identity?.owner_identity_id) {
+    const { data } = await supabase
+      .from('guest_identities')
+      .select('id,display_name,email')
+      .eq('tenant_id', tenantId)
+      .eq('identity_id', identity.owner_identity_id)
+      .maybeSingle()
+    ownerGuest = (data as OwnerGuest | null) ?? null
+  }
   return {
     organization: (organization.data ?? null) as ExternalOrganization | null,
     guest: guest as Guest,
+    identity,
+    ownerGuest,
     memberships: ((memberships.data ?? []) as (Membership & { resource: Resource })[]).sort((a, b) => Number(b.resource.is_sensitive) - Number(a.resource.is_sensitive)),
     activity: activity.data ?? [],
     history: history.data ?? [],

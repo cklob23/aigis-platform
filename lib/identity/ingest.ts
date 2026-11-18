@@ -147,6 +147,11 @@ export function planGuestInventory(input: {
     })
   }
 
+  const ownerByFrom = new Map(relations.map((rel) => [rel.from_identity_id, rel.to_identity_id]))
+  for (const identity of identities) {
+    identity.owner_identity_id = ownerByFrom.get(identity.id) ?? null
+  }
+
   return {
     tenantId: input.tenantId,
     now: input.now,
