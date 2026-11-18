@@ -20,7 +20,7 @@ export type GuestHubSource = {
   last_reviewed_at?: string | null
   last_sign_in_at: string | null
   last_non_interactive_sign_in_at?: string | null
-  first_seen_at: string
+  first_seen_at?: string
   last_seen_at: string
   removed_at?: string | null
   risk_score?: number
@@ -62,7 +62,7 @@ export function hubRowsFromGuest(guest: GuestHubSource) {
       owner_ms_object_id: guest.sponsor_ms_object_id,
       owner_display_name: guest.sponsor_display_name,
       last_activity_at: guest.last_sign_in_at ?? guest.last_non_interactive_sign_in_at ?? null,
-      first_seen_at: guest.first_seen_at,
+      first_seen_at: guest.first_seen_at ?? guest.last_seen_at,
       last_seen_at: guest.last_seen_at,
       removed_at: guest.removed_at ?? null,
     },
