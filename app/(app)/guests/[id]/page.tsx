@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatDate, relativeDays, daysBetween, titleCase } from '@/lib/format'
 import { RESOURCE_TYPE_LABELS } from '@/lib/types'
 import { describeRecommendation } from '@/lib/risk/recommendation'
+import { describeOwner, ownerKindLabel } from '@/lib/identity/owner'
 import { cn } from '@/lib/utils'
 
 export default async function GuestDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -24,7 +25,17 @@ export default async function GuestDetailPage({ params }: { params: Promise<{ id
   const { session, tenant } = await requireOnboarded()
   const data = await getGuestDetail(tenant.id, id)
   if (!data) notFound()
-  const { guest: g, memberships, activity, history, reviews, remediations, domain, organization } = data
+  const { guest: g, identity, ownerGuest, memberships, activity, history, reviews, remediations, domain, organization } = data
+  const owner = describeOwner(
+    identity ?? {
+      owner_kind: g.sponsor_ms_object_id || g.sponsor_email ? 'sponsor' : 'none',
+      owner_identity_id: null,
+      owner_display_name: g.sponsor_display_name,
+      owner_email: g.sponsor_email,
+      owner_ms_object_id: g.sponsor_ms_object_id,
+    },
+    ownerGuest,
+  )
   const sensitive = memberships.filter((m) => m.resource.is_sensitive)
   const factors = [...g.risk_factors].sort((a, b) => b.points - a.points)
   const recommendation = describeRecommendation(g)
@@ -41,7 +52,27 @@ export default async function GuestDetailPage({ params }: { params: Promise<{ id
     { label: 'Last sign-in', value: <span className={cn(!g.last_sign_in_at && 'text-destructive')}>{g.last_sign_in_at ? `${formatDate(g.last_sign_in_at, true)} · ${relativeDays(g.last_sign_in_at)}` : 'Never'}</span> },
     { label: 'Non-interactive', value: relativeDays(g.last_non_interactive_sign_in_at) },
     { label: 'Auth methods', value: g.auth_methods.length ? g.auth_methods.map((m) => titleCase(m.replace('AuthenticationMethod', ''))).join(', ') : <span className="text-muted-foreground">None registered</span> },
-    { label: 'Sponsor', value: g.sponsor_display_name ? <span className={cn(g.sponsor_enabled === false && 'text-warning')}>{g.sponsor_display_name}{g.sponsor_enabled === false && ' (disabled)'}<span className="block font-mono text-muted-foreground text-xs">{g.sponsor_email}</span></span> : <span className="text-destructive">No sponsor</span> },
+    {
+      label: 'Owner',
+      value:
+        owner.kind === 'none' ? (
+          <span className="text-destructive">None</span>
+        ) : (
+          <span className={cn(g.sponsor_enabled === false && 'text-warning')}>
+            <span className="text-muted-foreground text-xs">{ownerKindLabel(owner.kind)}</span>
+            {owner.href ? (
+              <Link href={owner.href} className="block font-medium hover:underline">
+                {owner.label}
+              </Link>
+            ) : (
+              <span className="block">{owner.label}</span>
+            )}
+            {owner.email && <span className="block font-mono text-muted-foreground text-xs">{owner.email}</span>}
+            {g.sponsor_enabled === false && <span className="block text-xs">Sponsor account is disabled</span>}
+            {!owner.resolved && owner.kind === 'sponsor' && <span className="block text-muted-foreground text-xs">Not in inventory (no employee ingest)</span>}
+          </span>
+        ),
+    },
     { label: 'Review status', value: <span className="capitalize">{titleCase(g.review_status)}{g.last_reviewed_at && <span className="ml-1 text-muted-foreground">· {relativeDays(g.last_reviewed_at)}</span>}</span> },
     { label: 'First seen by AIGIS', value: formatDate(g.first_seen_at) },
   ]

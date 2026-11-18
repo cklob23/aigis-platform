@@ -132,13 +132,14 @@ describe('dual-write ingest against local postgres', () => {
     for (const identity of plan.identities) {
       psql([
         '-c',
-        `insert into identities (id, tenant_id, identity_class, display_name, primary_email, status, owner_kind, owner_email, owner_ms_object_id, owner_display_name, last_activity_at, last_seen_at, removed_at)
-         values (${lit(identity.id)}, ${lit(identity.tenant_id)}, ${lit(identity.identity_class)}, ${lit(identity.display_name)}, ${lit(identity.primary_email)}, ${lit(identity.status)}, ${lit(identity.owner_kind)}, ${lit(identity.owner_email)}, ${lit(identity.owner_ms_object_id)}, ${lit(identity.owner_display_name)}, ${lit(identity.last_activity_at)}, ${lit(identity.last_seen_at)}, ${lit(identity.removed_at)})
+        `insert into identities (id, tenant_id, identity_class, display_name, primary_email, status, owner_kind, owner_identity_id, owner_email, owner_ms_object_id, owner_display_name, last_activity_at, last_seen_at, removed_at)
+         values (${lit(identity.id)}, ${lit(identity.tenant_id)}, ${lit(identity.identity_class)}, ${lit(identity.display_name)}, ${lit(identity.primary_email)}, ${lit(identity.status)}, ${lit(identity.owner_kind)}, ${lit(identity.owner_identity_id)}, ${lit(identity.owner_email)}, ${lit(identity.owner_ms_object_id)}, ${lit(identity.owner_display_name)}, ${lit(identity.last_activity_at)}, ${lit(identity.last_seen_at)}, ${lit(identity.removed_at)})
          on conflict (id) do update set
            display_name = excluded.display_name,
            primary_email = excluded.primary_email,
            status = excluded.status,
            owner_kind = excluded.owner_kind,
+           owner_identity_id = excluded.owner_identity_id,
            owner_email = excluded.owner_email,
            owner_ms_object_id = excluded.owner_ms_object_id,
            last_seen_at = excluded.last_seen_at,
@@ -192,6 +193,10 @@ describe('dual-write ingest against local postgres', () => {
     expect(scalar(`select count(*) from guest_identities where ms_object_id = 'oid-2' and removed_at is not null`)).toBe('1')
     expect(scalar(`select identity_id from guest_identities where ms_object_id = 'oid-4'`)).toBe('00000000-0000-0000-0000-000000000104')
     expect(scalar(`select count(*) from identity_relations where relation_type = 'sponsors'`)).toBe('1')
+    expect(scalar(`select owner_identity_id from identities where id = '00000000-0000-0000-0000-000000000104'`)).toBe(
+      '00000000-0000-0000-0000-000000000101',
+    )
+    expect(scalar(`select owner_identity_id is null from identities where id = '00000000-0000-0000-0000-000000000101'`)).toBe('t')
     expect(scalar(`select count(*) from identities where identity_class = 'human_internal'`)).toBe('0')
     expect(scalar(`select first_seen_at = timestamptz '2020-01-01T00:00:00Z' from identities where id = '00000000-0000-0000-0000-000000000101'`)).toBe('t')
     expect(scalar(`select risk_score from identities where id = '00000000-0000-0000-0000-000000000101'`)).toBe('42')

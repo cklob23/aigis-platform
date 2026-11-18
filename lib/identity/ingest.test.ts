@@ -156,10 +156,35 @@ describe('planGuestInventory sponsor relations', () => {
       },
     ])
     expect(plan.identities.every((row) => row.identity_class === 'external')).toBe(true)
-    expect(plan.identities.every((row) => row.owner_identity_id === null)).toBe(true)
+    const a = plan.identities.find((row) => row.id === 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const b = plan.identities.find((row) => row.id === 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')
     const c = plan.identities.find((row) => row.primary_email === 'oid-c@ex.example')
+    expect(a?.owner_kind).toBe('none')
+    expect(a?.owner_identity_id).toBeNull()
+    expect(b?.owner_kind).toBe('sponsor')
+    expect(b?.owner_identity_id).toBe('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     expect(c?.owner_kind).toBe('sponsor')
+    expect(c?.owner_identity_id).toBeNull()
     expect(c?.owner_ms_object_id).toBe('internal-oid')
+  })
+
+  it('clears owner_identity_id on rescan when the sponsor is no longer inventoried', () => {
+    const plan = planGuestInventory({
+      tenantId,
+      now,
+      incoming: [
+        incoming({
+          ms_object_id: 'oid-b',
+          display_name: 'B',
+          sponsor_ms_object_id: 'internal-oid',
+          sponsor_email: 'pat@contoso.example',
+        }),
+      ],
+      existing: [{ id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', ms_object_id: 'oid-b', identity_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', removed_at: null }],
+    })
+    expect(plan.relations).toEqual([])
+    expect(plan.identities[0].owner_kind).toBe('sponsor')
+    expect(plan.identities[0].owner_identity_id).toBeNull()
   })
 })
 
