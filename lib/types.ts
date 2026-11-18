@@ -22,6 +22,7 @@ export type RiskFactor = {
 export type Guest = {
   id: string
   tenant_id: string
+  identity_id: string
   ms_object_id: string
   display_name: string | null
   email: string | null
@@ -100,6 +101,64 @@ export type ExternalDomain = {
 
 /** Top-level identity taxonomy. Only `external` is populated today; the others reserve the model for later phases. */
 export type IdentityClass = 'human_internal' | 'external' | 'privileged' | 'non_human' | 'agent'
+export type IdentityStatus = 'active' | 'disabled' | 'removed'
+export type IdentityOwnerKind = 'sponsor' | 'assigned' | 'inferred' | 'none'
+export type IdentityAccountSource = 'entra'
+export type IdentityAccountKind = 'user' | 'guest' | 'sp' | 'workload' | 'agent'
+export type IdentityRelationType = 'owns' | 'sponsors' | 'same_as' | 'created_by'
+
+/** AI recommend/explain is on-demand and off until a later PR. No autonomous writes. */
+export const DEFAULT_AI_SETTINGS = { enabled: false, mode: 'on_demand' as const }
+
+export type Identity = {
+  id: string
+  tenant_id: string
+  identity_class: IdentityClass
+  display_name: string | null
+  primary_email: string | null
+  status: IdentityStatus
+  risk_score: number
+  risk_level: RiskLevel
+  recommended_action: RecommendedAction
+  review_status: ReviewStatus
+  last_reviewed_at: string | null
+  owner_identity_id: string | null
+  owner_kind: IdentityOwnerKind
+  owner_email: string | null
+  owner_ms_object_id: string | null
+  owner_display_name: string | null
+  last_activity_at: string | null
+  first_seen_at: string
+  last_seen_at: string
+  removed_at: string | null
+}
+
+export type IdentityAccount = {
+  id: string
+  identity_id: string
+  tenant_id: string
+  source: IdentityAccountSource | string
+  source_object_id: string
+  account_kind: IdentityAccountKind
+  upn: string | null
+  enabled: boolean
+  last_activity_at: string | null
+  attrs: Record<string, unknown>
+  first_seen_at: string
+  last_seen_at: string
+  removed_at: string | null
+}
+
+export type IdentityRelation = {
+  id: string
+  tenant_id: string
+  from_identity_id: string
+  to_identity_id: string
+  relation_type: IdentityRelationType
+  confidence: number | null
+  evidence: Record<string, unknown>
+  created_at: string
+}
 
 /** How an external identity relates to the tenant, inferred from Graph signals and organization context. */
 export type ExternalIdentityType = 'b2b_guest' | 'external_member' | 'cross_tenant' | 'contractor' | 'partner' | 'vendor' | 'client' | 'unknown'
