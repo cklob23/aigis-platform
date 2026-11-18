@@ -29,6 +29,8 @@ function chunk<T>(arr: T[], size: number) {
 
 import { classifyExternalIdentity, defaultOrganizationName } from '@/lib/identity/classify'
 import { resolveCompany } from '@/lib/identity/company'
+import { planGuestInventory, type IncomingExternalGuest } from '@/lib/identity/ingest'
+import { writeGuestInventory } from '@/lib/identity/write-inventory'
 import { evaluateAlertRules } from '@/lib/alerts/evaluate'
 
 function domainOf(user: GraphUser) {
@@ -251,7 +253,7 @@ export async function runScan(jobId: string, tenantId: string) {
         if (domainNames.length) await supabase.from('external_organizations').update({ last_seen_at: now }).eq('tenant_id', tenantId).in('id', Array.from(new Set(Array.from(orgByDomain.values()).map((o) => o.id))))
       }
 
-      const guestRows = graphGuests.map((u) => {
+      const incoming: IncomingExternalGuest[] = graphGuests.map((u) => {
         const sponsor = u.sponsors?.[0]
         const domain = domainOf(u)
         const org = domain ? orgByDomain.get(domain) ?? null : null
@@ -273,7 +275,6 @@ export async function runScan(jobId: string, tenantId: string) {
           external_type: classification.external_type,
           classification_evidence: classification.evidence,
           external_organization_id: org?.id ?? null,
-          tenant_id: tenantId,
           ms_object_id: u.id,
           display_name: u.displayName ?? null,
           email: u.mail ?? null,
@@ -292,22 +293,24 @@ export async function runScan(jobId: string, tenantId: string) {
           sponsor_display_name: sponsor?.displayName ?? null,
           sponsor_email: sponsor?.mail ?? null,
           sponsor_enabled: sponsor?.accountEnabled ?? null,
-          last_seen_at: now,
-          removed_at: null,
         }
       })
-      const { data: existingGuests } = await supabase.from('guest_identities').select('id,ms_object_id,removed_at').eq('tenant_id', tenantId)
-      const existingIds = new Set((existingGuests ?? []).filter((e) => !e.removed_at).map((e) => e.ms_object_id as string))
-      const incomingIds = new Set(guestRows.map((r) => r.ms_object_id))
-      for (const batch of chunk(guestRows, 500)) await supabase.from('guest_identities').upsert(batch, { onConflict: 'tenant_id,ms_object_id' })
-      const removedGuestIds = (existingGuests ?? []).filter((e) => !e.removed_at && !incomingIds.has(e.ms_object_id as string)).map((e) => e.id as string)
-      if (removedGuestIds.length) await supabase.from('guest_identities').update({ removed_at: now }).in('id', removedGuestIds)
-      summary.new_guests = guestRows.filter((r) => !existingIds.has(r.ms_object_id)).length
-      summary.removed_guests = removedGuestIds.length
+      const { data: existingGuests } = await supabase.from('guest_identities').select('id,ms_object_id,identity_id,removed_at').eq('tenant_id', tenantId)
+      const inventory = planGuestInventory({
+        tenantId,
+        now,
+        incoming,
+        existing: (existingGuests ?? []) as { id: string; ms_object_id: string; identity_id: string | null; removed_at: string | null }[],
+      })
+      await writeGuestInventory(inventory)
+      summary.new_guests = inventory.newCount
+      summary.removed_guests = inventory.removedGuestIds.length
+      summary.identities = inventory.identities.length
+      summary.identity_accounts = inventory.accounts.length
+      summary.identity_relations = inventory.relations.length
       await progress('guests', 28, `${graphGuests.length} guests inventoried`, 'done')
 
-      const { data: guestIdRows } = await supabase.from('guest_identities').select('id,ms_object_id').eq('tenant_id', tenantId).is('removed_at', null)
-      const guestIdByMs = new Map((guestIdRows ?? []).map((r) => [r.ms_object_id as string, r.id as string]))
+      const guestIdByMs = new Map(inventory.guests.map((r) => [r.ms_object_id, r.id]))
 
       await progress('groups', 30, 'Enumerating groups and teams…')
       const groups = await fetchGroups(g, (n) => progress('groups', Math.min(45, 30 + Math.floor(n / 100)), `${n} groups discovered…`))
