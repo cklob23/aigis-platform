@@ -1,4 +1,4 @@
-import type { DomainClassification, RecommendedAction, RiskFactor, RiskLevel } from '@/lib/types'
+import type { DomainClassification, IdentityClass, RecommendedAction, RiskFactor, RiskLevel } from '@/lib/types'
 
 export type RiskInput = {
   accountEnabled: boolean
@@ -36,7 +36,52 @@ export function levelFor(score: number): RiskLevel {
   return 'low'
 }
 
+export type IdentityRiskResult = {
+  score: number
+  level: RiskLevel
+  factors: RiskFactor[]
+  recommendedAction: RecommendedAction
+}
+
+const STUB_RESULT: IdentityRiskResult = { score: 0, level: 'low', factors: [], recommendedAction: 'keep' }
+
+/** Guest factors. Other classes are reserved stubs (score 0) until their scanners exist. */
+export const CLASS_FACTOR_SETS: Record<IdentityClass, 'external' | 'stub'> = {
+  external: 'external',
+  human_internal: 'stub',
+  privileged: 'stub',
+  non_human: 'stub',
+  agent: 'stub',
+}
+
+/**
+ * Shared identity risk. External uses the current guest factor set bit-identical.
+ * Stub classes return score 0 / keep. Does not write Graph or remediate.
+ */
+export function computeIdentityRisk(
+  identityClass: IdentityClass,
+  input: RiskInput,
+  policy: RiskPolicyConfig = DEFAULT_RISK_POLICY,
+  now = Date.now(),
+): IdentityRiskResult {
+  if (CLASS_FACTOR_SETS[identityClass] !== 'external') return STUB_RESULT
+  return scoreExternal(input, policy, now)
+}
+
+/** Hub columns mirrored from a score. Guest rows also keep risk_factors. */
+export function identityRiskPatch(risk: IdentityRiskResult) {
+  return {
+    risk_score: risk.score,
+    risk_level: risk.level,
+    recommended_action: risk.recommendedAction,
+  }
+}
+
 export function computeRisk(input: RiskInput, policy: RiskPolicyConfig = DEFAULT_RISK_POLICY, now = Date.now()) {
+  return computeIdentityRisk('external', input, policy, now)
+}
+
+function scoreExternal(input: RiskInput, policy: RiskPolicyConfig, now: number): IdentityRiskResult {
   const factors: RiskFactor[] = []
   const add = (key: string, label: string, points: number, detail?: string) => factors.push({ key, label, points, detail })
 
