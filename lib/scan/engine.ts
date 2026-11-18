@@ -34,6 +34,7 @@ import { writeGuestInventory } from '@/lib/identity/write-inventory'
 import { requireIdentityId, withMembershipIds } from '@/lib/identity/governance'
 import { loadGovernanceMaps } from '@/lib/identity/governance-maps'
 import { evaluateAlertRules } from '@/lib/alerts/evaluate'
+import { applyScanAlertResults } from '@/lib/scan/alerts'
 import { mustWrite } from '@/lib/supabase/write'
 import {
   persistGuestRiskUpdates,
@@ -546,13 +547,7 @@ export async function runScan(jobId: string, tenantId: string) {
     await snapshotMetrics(tenantId, jobId)
     await progress('diff', 100, 'Scan complete', 'done')
 
-    try {
-      const fired = await evaluateAlertRules(tenantId, { scanJobId: jobId, scanStartedAt: now })
-      summary.alerts = fired.created
-      summary.alert_emails = fired.emailed
-    } catch (err) {
-      console.log('[v0] alert rule evaluation failed:', err instanceof Error ? err.message : err)
-    }
+    await applyScanAlertResults(summary, () => evaluateAlertRules(tenantId, { scanJobId: jobId, scanStartedAt: now }))
 
     mustWrite(
       'scan_jobs completed',

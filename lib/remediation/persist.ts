@@ -1,4 +1,4 @@
-import { mustWrite, type WriteResult, type WriteTask } from '@/lib/supabase/write'
+import { mustWrite, WriteFailedError, type WriteResult, type WriteTask } from '@/lib/supabase/write'
 
 export type RemediationActionInsert = WriteResult<{ id: string }>
 
@@ -19,9 +19,12 @@ export async function persistRemediationEffects(
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Remediation write failed'
     try {
-      await markFailed(message)
-    } catch {
-      // Keep the original write error.
+      mustWrite('remediation_actions markFailed', await markFailed(message))
+    } catch (stampErr) {
+      const stampMessage = stampErr instanceof WriteFailedError ? stampErr.writeMessage : stampErr instanceof Error ? stampErr.message : 'markFailed failed'
+      const label = err instanceof WriteFailedError ? err.label : 'remediation write'
+      const writeMessage = err instanceof WriteFailedError ? err.writeMessage : message
+      throw new WriteFailedError(label, `${writeMessage} (status stamp also failed: ${stampMessage})`)
     }
     throw err
   }

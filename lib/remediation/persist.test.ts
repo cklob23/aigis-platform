@@ -36,6 +36,17 @@ describe('persistRemediationEffects', () => {
           throw new Error('could not mark failed')
         },
       ),
-    ).rejects.toThrow('guest_activity insert: fk missing')
+    ).rejects.toThrow('guest_activity insert: fk missing (status stamp also failed: could not mark failed)')
+  })
+
+  it('surfaces a supabase stamp error so status=executing is not silent', async () => {
+    const markFailed = vi.fn(async () => ({ error: { message: 'row locked' } }))
+    await expect(
+      persistRemediationEffects(
+        [{ label: 'guest_activity insert', run: async () => ({ error: { message: 'fk missing' } }) }],
+        markFailed,
+      ),
+    ).rejects.toThrow('guest_activity insert: fk missing (status stamp also failed: row locked)')
+    expect(markFailed).toHaveBeenCalledWith('guest_activity insert: fk missing')
   })
 })
