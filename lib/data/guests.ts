@@ -36,7 +36,7 @@ export async function getGuestDetail(tenantId: string, guestId: string) {
   const supabase = db()
   const { data: guest } = await supabase.from('guest_identities').select('*').eq('tenant_id', tenantId).eq('id', guestId).maybeSingle()
   if (!guest) return null
-  const [memberships, activity, history, reviews, remediations, domain, organization, identityRow] = await Promise.all([
+  const [memberships, activity, history, reviews, remediations, domain, organization, identityRow, explanationRow] = await Promise.all([
     supabase.from('resource_memberships').select('*, resource:resources(*)').eq('tenant_id', tenantId).eq('guest_id', guestId).is('removed_at', null),
     supabase.from('guest_activity').select('*').eq('tenant_id', tenantId).eq('guest_id', guestId).order('occurred_at', { ascending: false }).limit(30),
     supabase.from('risk_scores').select('score,level,calculated_at').eq('tenant_id', tenantId).eq('guest_id', guestId).order('calculated_at', { ascending: true }).limit(30),
@@ -47,6 +47,14 @@ export async function getGuestDetail(tenantId: string, guestId: string) {
     guest.identity_id
       ? supabase.from('identities').select('*').eq('tenant_id', tenantId).eq('id', guest.identity_id).maybeSingle()
       : Promise.resolve({ data: null }),
+    supabase
+      .from('recommendation_explanations')
+      .select('id,explanation,recommended_action,citations,created_at')
+      .eq('tenant_id', tenantId)
+      .eq('guest_id', guestId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ])
   const identity = (identityRow.data ?? null) as Identity | null
   let ownerGuest: OwnerGuest | null = null
@@ -70,6 +78,7 @@ export async function getGuestDetail(tenantId: string, guestId: string) {
     reviews: reviews.data ?? [],
     remediations: remediations.data ?? [],
     domain: domain.data,
+    explanation: explanationRow.error ? null : explanationRow.data,
   }
 }
 

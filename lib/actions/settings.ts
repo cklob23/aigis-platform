@@ -9,6 +9,7 @@ import { rescoreTenant, generateFindings } from '@/lib/scan/engine'
 import { resetDemoTenant } from '@/lib/demo/seed'
 import { createSession } from '@/lib/auth/session'
 import type { RoleKey } from '@/lib/auth/rbac'
+import { mergeAiSettings, parseAiSettings } from '@/lib/ai/recommend'
 import { mustWrite } from '@/lib/supabase/write'
 
 type Result = { ok: true; message?: string } | { ok: false; error: string }
@@ -54,6 +55,28 @@ export async function updateEnforcementMode(mode: 'monitor' | 'enforce'): Promis
     return { ok: true }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Failed to update enforcement mode' }
+  }
+}
+
+export async function updateAiSettings(enabled: boolean): Promise<Result> {
+  try {
+    const { session, tenant } = await requireContext()
+    assertCan(session, 'settings.manage')
+    const prev = parseAiSettings(tenant.settings)
+    const settings = mergeAiSettings(tenant.settings, enabled)
+    mustWrite('tenants ai_settings', await db().from('tenants').update({ settings }).eq('id', tenant.id))
+    await audit(session, {
+      action: enabled ? 'settings.ai_enabled' : 'settings.ai_disabled',
+      targetType: 'tenant',
+      targetId: tenant.id,
+      previousState: { ai: prev, enforcement_mode: tenant.settings.enforcement_mode ?? 'monitor' },
+      newState: { ai: settings.ai, enforcement_mode: tenant.settings.enforcement_mode ?? 'monitor' },
+    })
+    revalidatePath('/settings')
+    revalidatePath('/guests')
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Failed to update AI settings' }
   }
 }
 
