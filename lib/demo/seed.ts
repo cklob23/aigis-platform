@@ -7,6 +7,7 @@ import { hubRowsFromGuest, type GuestHubSource } from '@/lib/identity/provision'
 import { withIdentityId, withMembershipIds } from '@/lib/identity/governance'
 import { loadGovernanceMaps } from '@/lib/identity/governance-maps'
 import { DEFAULT_AI_SETTINGS, type DomainClassification, type RelationshipType, type ResourceType } from '@/lib/types'
+import { mustWrite } from '@/lib/supabase/write'
 
 export const DEMO_MS_TENANT_ID = 'demo-northwind-health'
 
@@ -110,7 +111,9 @@ export async function getOrCreateDemoTenant() {
 export async function resetDemoTenant() {
   const supabase = db()
   const { data: existing } = await supabase.from('tenants').select('id,organization_id').eq('ms_tenant_id', DEMO_MS_TENANT_ID).maybeSingle()
-  if (existing) await supabase.from('organizations').delete().eq('id', existing.organization_id)
+  if (existing) {
+    mustWrite('organizations delete', await supabase.from('organizations').delete().eq('id', existing.organization_id))
+  }
   return seedDemoTenant()
 }
 
@@ -119,18 +122,31 @@ export async function ensureDemoUser() {
   const email = 'demo.admin@northwindhealth.example'
   const { data: existing } = await supabase.from('users').select('id').eq('email', email).maybeSingle()
   if (existing) return { id: existing.id as string, email, name: 'Demo Administrator' }
-  const { data } = await supabase.from('users').insert({ email, display_name: 'Demo Administrator', ms_tenant_id: DEMO_MS_TENANT_ID, ms_object_id: 'demo-admin-oid' }).select('id').single()
-  return { id: data!.id as string, email, name: 'Demo Administrator' }
+  const { data } = mustWrite(
+    'users insert',
+    await supabase.from('users').insert({ email, display_name: 'Demo Administrator', ms_tenant_id: DEMO_MS_TENANT_ID, ms_object_id: 'demo-admin-oid' }).select('id').single(),
+  )
+  if (!data?.id) throw new Error('users insert: missing id')
+  return { id: data.id as string, email, name: 'Demo Administrator' }
 }
 
 async function seedDemoTenant() {
   const supabase = db()
   const r = rng(20260401)
 
-  const { data: org } = await supabase.from('organizations').insert({ name: 'Northwind Health' }).select('id').single()
-  const orgId = org!.id as string
-  await supabase.from('subscriptions').insert({ organization_id: orgId, plan: 'professional', status: 'active', seats: 5, current_period_end: daysAgo(-320) })
-  const { data: tenant } = await supabase
+  const { data: org } = mustWrite(
+    'organizations insert',
+    await supabase.from('organizations').insert({ name: 'Northwind Health' }).select('id').single(),
+  )
+  if (!org?.id) throw new Error('organizations insert: missing id')
+  const orgId = org.id as string
+  mustWrite(
+    'subscriptions insert',
+    await supabase.from('subscriptions').insert({ organization_id: orgId, plan: 'professional', status: 'active', seats: 5, current_period_end: daysAgo(-320) }),
+  )
+  const { data: tenant } = mustWrite(
+    'tenants insert',
+    await supabase
     .from('tenants')
     .insert({
       organization_id: orgId,
@@ -147,12 +163,19 @@ async function seedDemoTenant() {
       settings: { risk_policy: { inactiveDays: 90, staleDays: 180, reviewDays: 365 }, scan_schedule: 'daily', notifications: { email: true, weekly_digest: true }, ai: DEFAULT_AI_SETTINGS },
     })
     .select('id')
-    .single()
-  const tenantId = tenant!.id as string
+    .single(),
+  )
+  if (!tenant?.id) throw new Error('tenants insert: missing id')
+  const tenantId = tenant.id as string
   const demoUser = await ensureDemoUser()
-  await supabase.from('administrators').insert({ tenant_id: tenantId, user_id: demoUser.id, role_key: 'gs_admin' })
+  mustWrite(
+    'administrators insert',
+    await supabase.from('administrators').insert({ tenant_id: tenantId, user_id: demoUser.id, role_key: 'gs_admin' }),
+  )
 
-  const { data: domainRows } = await supabase
+  const { data: domainRows } = mustWrite(
+    'external_domains insert',
+    await supabase
     .from('external_domains')
     .insert(
       DOMAINS.map((d) => ({
@@ -166,7 +189,8 @@ async function seedDemoTenant() {
         last_seen_at: daysAgo(0.2),
       })),
     )
-    .select('id,domain,classification')
+    .select('id,domain,classification'),
+  )
   const domainById = new Map((domainRows ?? []).map((d) => [d.domain as string, d]))
 
   // External organizations: one per domain, except a few deliberately grouped
@@ -199,18 +223,26 @@ async function seedDemoTenant() {
     first_seen_at: daysAgo(90 + Math.floor(r() * 600)),
     last_seen_at: daysAgo(0.2),
   }))
-  const { data: orgRows } = await supabase.from('external_organizations').insert(orgInserts).select('id,name,relationship_type')
+  const { data: orgRows } = mustWrite(
+    'external_organizations insert',
+    await supabase.from('external_organizations').insert(orgInserts).select('id,name,relationship_type'),
+  )
   const orgByDomain = new Map<string, { id: string; relationship_type: RelationshipType }>()
   for (const o of orgRows ?? []) {
     const spec = orgSpecs.get(o.name as string)
     for (const domain of spec?.domains ?? []) {
       orgByDomain.set(domain, { id: o.id as string, relationship_type: o.relationship_type as RelationshipType })
-      await supabase.from('external_domains').update({ organization_id: o.id }).eq('id', domainById.get(domain)!.id)
+      mustWrite(
+        'external_domains link organization',
+        await supabase.from('external_domains').update({ organization_id: o.id }).eq('id', domainById.get(domain)!.id),
+      )
     }
   }
 
   const internalOwners = Array.from({ length: 12 }, (_, i) => ({ id: `owner-${i}`, displayName: `${FIRST[(i * 7) % FIRST.length]} ${LAST[(i * 11) % LAST.length]}`, mail: `${FIRST[(i * 7) % FIRST.length].toLowerCase()}.${LAST[(i * 11) % LAST.length].toLowerCase()}@northwindhealth.com` }))
-  const { data: resourceRows } = await supabase
+  const { data: resourceRows } = mustWrite(
+    'resources insert',
+    await supabase
     .from('resources')
     .insert(
       RESOURCES.map((res, i) => {
@@ -231,12 +263,15 @@ async function seedDemoTenant() {
         }
       }),
     )
-    .select('id,display_name,resource_type,is_sensitive')
+    .select('id,display_name,resource_type,is_sensitive'),
+  )
   const resources = resourceRows ?? []
 
   // SharePoint sites for teams and M365 groups
   const groupsWithSites = resources.filter((x) => x.resource_type === 'team' || x.resource_type === 'm365_group')
-  const { data: siteRows } = await supabase
+  const { data: siteRows } = mustWrite(
+    'resources sharepoint insert',
+    await supabase
     .from('resources')
     .insert(
       groupsWithSites.map((grp, i) => ({
@@ -251,7 +286,8 @@ async function seedDemoTenant() {
         first_seen_at: daysAgo(95),
       })),
     )
-    .select('id,linked_resource_id')
+    .select('id,linked_resource_id'),
+  )
   const siteByGroup = new Map((siteRows ?? []).map((s) => [s.linked_resource_id as string, s.id as string]))
 
   const sponsors = internalOwners.map((o, i) => ({ ...o, enabled: i !== 3 && i !== 9 }))
@@ -329,14 +365,17 @@ async function seedDemoTenant() {
   }
   const hubs = guests.map((g) => hubRowsFromGuest(g as GuestHubSource))
   for (let i = 0; i < hubs.length; i += 100) {
-    await supabase.from('identities').insert(hubs.slice(i, i + 100).map((h) => h.identity))
+    mustWrite('identities insert', await supabase.from('identities').insert(hubs.slice(i, i + 100).map((h) => h.identity)))
   }
   for (let i = 0; i < hubs.length; i += 100) {
-    await supabase.from('identity_accounts').insert(hubs.slice(i, i + 100).map((h) => h.account))
+    mustWrite('identity_accounts insert', await supabase.from('identity_accounts').insert(hubs.slice(i, i + 100).map((h) => h.account)))
   }
   const insertedGuests: { id: string; ms_object_id: string; identity_id: string }[] = []
   for (let i = 0; i < guests.length; i += 100) {
-    const { data } = await supabase.from('guest_identities').insert(guests.slice(i, i + 100)).select('id,ms_object_id,identity_id')
+    const { data } = mustWrite(
+      'guest_identities insert',
+      await supabase.from('guest_identities').insert(guests.slice(i, i + 100)).select('id,ms_object_id,identity_id'),
+    )
     insertedGuests.push(...((data ?? []) as { id: string; ms_object_id: string; identity_id: string }[]))
   }
   insertedGuests.sort((a, b) => Number(a.ms_object_id.split('-').pop()) - Number(b.ms_object_id.split('-').pop()))
@@ -365,8 +404,12 @@ async function seedDemoTenant() {
       }
     }
   })
-  for (let i = 0; i < memberships.length; i += 200) await supabase.from('resource_memberships').insert(memberships.slice(i, i + 200))
-  for (const [rid, n] of extCounts) await supabase.from('resources').update({ external_member_count: n }).eq('id', rid)
+  for (let i = 0; i < memberships.length; i += 200) {
+    mustWrite('resource_memberships insert', await supabase.from('resource_memberships').insert(memberships.slice(i, i + 200)))
+  }
+  for (const [rid, n] of extCounts) {
+    mustWrite('resources member count', await supabase.from('resources').update({ external_member_count: n }).eq('id', rid))
+  }
 
   // Activity timeline samples
   const activity = insertedGuests.slice(0, 120).flatMap((g, i) => [
@@ -374,10 +417,14 @@ async function seedDemoTenant() {
     withIdentityId({ tenant_id: tenantId, guest_id: g.id, activity_type: 'membership_added', occurred_at: daysAgo(10 + (i % 60)), details: { resource: RESOURCES[i % RESOURCES.length].name } }, maps),
     ...(guests[i].last_sign_in_at ? [withIdentityId({ tenant_id: tenantId, guest_id: g.id, activity_type: 'sign_in', occurred_at: guests[i].last_sign_in_at as string, details: { app: ['Microsoft Teams', 'SharePoint Online', 'Outlook'][i % 3] } }, maps)] : []),
   ])
-  for (let i = 0; i < activity.length; i += 200) await supabase.from('guest_activity').insert(activity.slice(i, i + 200))
+  for (let i = 0; i < activity.length; i += 200) {
+    mustWrite('guest_activity insert', await supabase.from('guest_activity').insert(activity.slice(i, i + 200)))
+  }
 
   // Policies
-  await supabase.from('policies').insert([
+  mustWrite(
+    'policies insert',
+    await supabase.from('policies').insert([
     { tenant_id: tenantId, name: 'Inactive guests (90 days)', description: 'Flag guests with no sign-in activity for 90 days.', rule_type: 'inactive_days', config: { days: 90 }, action: 'flag', severity: 'medium', is_system: true },
     { tenant_id: tenantId, name: 'Stale guests (180 days)', description: 'Recommend removal for guests inactive 180+ days.', rule_type: 'inactive_days', config: { days: 180 }, action: 'recommend_removal', severity: 'high', is_system: true },
     { tenant_id: tenantId, name: 'Invitation never accepted', description: 'Flag invitations pending for more than 30 days.', rule_type: 'never_signed_in', config: { days: 30 }, action: 'recommend_removal', severity: 'medium', is_system: true },
@@ -386,13 +433,14 @@ async function seedDemoTenant() {
     { tenant_id: tenantId, name: 'Blocked domain access', description: 'Any guest from a blocked domain must be removed.', rule_type: 'unapproved_domain', config: { classifications: ['blocked'] }, action: 'recommend_removal', severity: 'critical', is_system: true },
     { tenant_id: tenantId, name: 'Annual access review', description: 'Guests must be reviewed at least every 365 days.', rule_type: 'no_recent_review', config: { days: 365 }, action: 'create_review', severity: 'low', is_system: true },
     { tenant_id: tenantId, name: 'Temporary engagements expired', description: 'Temporary-domain guests past their review date.', rule_type: 'expired_temporary', config: {}, action: 'recommend_removal', severity: 'high', is_system: false },
-  ])
+  ]),
+  )
 
   // Score, findings, and 12 weeks of trend snapshots
   await rescoreTenant(tenantId, null)
   await generateFindings(tenantId)
   const base = await snapshotMetrics(tenantId, null)
-  await supabase.from('scan_results').delete().eq('tenant_id', tenantId)
+  mustWrite('scan_results delete', await supabase.from('scan_results').delete().eq('tenant_id', tenantId))
   const history = Array.from({ length: 13 }, (_, w) => {
     const weeksAgo = 12 - w
     const drift = 1 + weeksAgo * 0.018
@@ -407,28 +455,35 @@ async function seedDemoTenant() {
     }
     return { tenant_id: tenantId, snapshot: snap, created_at: daysAgo(weeksAgo * 7 + 0.2) }
   })
-  await supabase.from('scan_results').insert(history)
+  mustWrite('scan_results insert', await supabase.from('scan_results').insert(history))
 
   // Scan history
-  await supabase.from('scan_jobs').insert(
-    Array.from({ length: 8 }, (_, i) => ({
-      tenant_id: tenantId,
-      scan_type: i === 7 ? 'initial_full' : 'scheduled',
-      status: 'completed',
-      progress: { percent: 100, phase: 'diff' },
-      started_by: i === 7 ? demoUser.id : null,
-      started_at: daysAgo(i + 0.21),
-      completed_at: daysAgo(i + 0.2),
-      summary: { ...base, guests: base.total_guests - i, groups: RESOURCES.length, new_guests: i === 0 ? 3 : Math.floor(r() * 4), removed_guests: Math.floor(r() * 2) },
-    })),
+  mustWrite(
+    'scan_jobs insert',
+    await supabase.from('scan_jobs').insert(
+      Array.from({ length: 8 }, (_, i) => ({
+        tenant_id: tenantId,
+        scan_type: i === 7 ? 'initial_full' : 'scheduled',
+        status: 'completed',
+        progress: { percent: 100, phase: 'diff' },
+        started_by: i === 7 ? demoUser.id : null,
+        started_at: daysAgo(i + 0.21),
+        completed_at: daysAgo(i + 0.2),
+        summary: { ...base, guests: base.total_guests - i, groups: RESOURCES.length, new_guests: i === 0 ? 3 : Math.floor(r() * 4), removed_guests: Math.floor(r() * 2) },
+      })),
+    ),
   )
 
   // Access review in flight
-  const { data: review } = await supabase
-    .from('access_reviews')
-    .insert({ tenant_id: tenantId, name: 'Q2 Finance & HR guest review', description: 'Quarterly certification of external access to finance and HR resources.', status: 'active', scope: { sensitivity: ['finance', 'hr'] }, created_by: demoUser.id, due_at: daysAgo(-9), created_at: daysAgo(5) })
-    .select('id')
-    .single()
+  const { data: review } = mustWrite(
+    'access_reviews insert',
+    await supabase
+      .from('access_reviews')
+      .insert({ tenant_id: tenantId, name: 'Q2 Finance & HR guest review', description: 'Quarterly certification of external access to finance and HR resources.', status: 'active', scope: { sensitivity: ['finance', 'hr'] }, created_by: demoUser.id, due_at: daysAgo(-9), created_at: daysAgo(5) })
+      .select('id')
+      .single(),
+  )
+  if (!review?.id) throw new Error('access_reviews insert: missing id')
   const sensitiveIds = new Set(resources.filter((x) => x.is_sensitive).map((x) => x.id))
   const financeHrGuests = Array.from(new Set(memberships.filter((m) => sensitiveIds.has(m.resource_id as string)).map((m) => m.guest_id as string))).slice(0, 24)
   const resourceById = new Map(resources.map((x) => [x.id, x]))
@@ -439,18 +494,24 @@ async function seedDemoTenant() {
     })
     const decided = i < 9
     const decision = decided ? (['approve', 'remove', 'approve', 'extend', 'remove', 'approve', 'investigate', 'approve', 'remove'] as const)[i] : null
-    return withIdentityId({ tenant_id: tenantId, review_id: review!.id, guest_id: gid, status: decided ? 'decided' : 'pending', decision, resources_snapshot: snap, decided_at: decided ? daysAgo(4 - i * 0.3) : null }, maps)
+    return withIdentityId({ tenant_id: tenantId, review_id: review.id, guest_id: gid, status: decided ? 'decided' : 'pending', decision, resources_snapshot: snap, decided_at: decided ? daysAgo(4 - i * 0.3) : null }, maps)
   })
-  await supabase.from('review_items').insert(reviewItems)
-  await supabase.from('guest_identities').update({ review_status: 'pending' }).in('id', financeHrGuests.slice(9))
+  mustWrite('review_items insert', await supabase.from('review_items').insert(reviewItems))
+  mustWrite(
+    'guest_identities review_status',
+    await supabase.from('guest_identities').update({ review_status: 'pending' }).in('id', financeHrGuests.slice(9)),
+  )
 
   // Alerts and audit history
   const blockedGuests = insertedGuests.filter((_, i) => guestPlans[i].domain === 'ex-vendor-stratus.com')
-  await supabase.from('alerts').insert([
+  mustWrite(
+    'alerts insert',
+    await supabase.from('alerts').insert([
     ...blockedGuests.slice(0, 3).map((g) => withIdentityId({ tenant_id: tenantId, alert_type: 'blocked_domain_access', severity: 'critical', title: 'Guest from blocked domain still has access', description: 'ex-vendor-stratus.com was blocked after contract termination.', guest_id: g.id }, maps)),
     { tenant_id: tenantId, alert_type: 'new_sensitive_access', severity: 'high', title: '3 new guests added to Board Materials', description: 'Detected in the last scan. Sponsors notified.', resource_id: resources.find((x) => x.display_name === 'Board Materials')?.id },
     { tenant_id: tenantId, alert_type: 'sponsor_disabled', severity: 'medium', title: 'Sponsor account disabled for 11 guests', description: 'Sponsor Dev Patel left the organization. Reassign or review these guests.' },
-  ])
+  ]),
+  )
   const auditRows = [
     { action: 'tenant.connected', target_type: 'tenant', target_label: 'Northwind Health', created_at: daysAgo(96) },
     { action: 'scan.started', target_type: 'scan_job', target_label: 'Initial full scan', created_at: daysAgo(95.9) },
@@ -463,7 +524,7 @@ async function seedDemoTenant() {
     { action: 'remediation.executed', target_type: 'guest', target_label: 'tallgrassaudit.com · 4 guests removed', new_state: { removed: 4 }, reason: 'Audit engagement ended', created_at: daysAgo(2) },
     { action: 'scan.completed', target_type: 'scan_job', target_label: 'Scheduled scan', new_state: base, created_at: daysAgo(0.2) },
   ].map((a) => ({ tenant_id: tenantId, actor_user_id: demoUser.id, actor_email: a.action.startsWith('scan.completed') ? 'system' : demoUser.email, source_ip: '203.0.113.42', ...a }))
-  await supabase.from('audit_events').insert(auditRows)
+  mustWrite('audit_events insert', await supabase.from('audit_events').insert(auditRows))
 
   return tenantId
 }

@@ -9,6 +9,7 @@ import { rescoreTenant, generateFindings } from '@/lib/scan/engine'
 import { resetDemoTenant } from '@/lib/demo/seed'
 import { createSession } from '@/lib/auth/session'
 import type { RoleKey } from '@/lib/auth/rbac'
+import { mustWrite } from '@/lib/supabase/write'
 
 type Result = { ok: true; message?: string } | { ok: false; error: string }
 const fail = (err: unknown): Result => ({ ok: false, error: err instanceof Error ? err.message : 'Something went wrong' })
@@ -19,7 +20,7 @@ export async function updateRiskPolicy(input: { inactiveDays: number; staleDays:
     assertCan(session, 'policy.manage')
     const prev = (tenant.settings.risk_policy as Record<string, number>) ?? {}
     const settings = { ...tenant.settings, risk_policy: input }
-    await db().from('tenants').update({ settings }).eq('id', tenant.id)
+    mustWrite('tenants risk_policy', await db().from('tenants').update({ settings }).eq('id', tenant.id))
     await audit(session, { action: 'policy.updated', targetType: 'tenant', targetId: tenant.id, targetLabel: 'Risk thresholds', previousState: prev, newState: input })
     await rescoreTenant(tenant.id, null, input)
     await generateFindings(tenant.id)
@@ -37,7 +38,10 @@ export async function updateEnforcementMode(mode: 'monitor' | 'enforce'): Promis
     const { session, tenant } = await requireContext()
     assertCan(session, 'settings.manage')
     const prev = tenant.settings.enforcement_mode ?? 'monitor'
-    await db().from('tenants').update({ settings: { ...tenant.settings, enforcement_mode: mode } }).eq('id', tenant.id)
+    mustWrite(
+      'tenants enforcement_mode',
+      await db().from('tenants').update({ settings: { ...tenant.settings, enforcement_mode: mode } }).eq('id', tenant.id),
+    )
     await audit(session, {
       action: mode === 'enforce' ? 'settings.enforcement_enabled' : 'settings.enforcement_disabled',
       targetType: 'tenant',
@@ -58,7 +62,7 @@ export async function updateNotificationSettings(input: { email: boolean; weekly
     const { session, tenant } = await requireContext()
     assertCan(session, 'settings.manage')
     const settings = { ...tenant.settings, notifications: { email: input.email, weekly_digest: input.weeklyDigest }, scan_schedule: input.scanSchedule }
-    await db().from('tenants').update({ settings }).eq('id', tenant.id)
+    mustWrite('tenants notifications', await db().from('tenants').update({ settings }).eq('id', tenant.id))
     await audit(session, { action: 'settings.updated', targetType: 'tenant', targetId: tenant.id, newState: input })
     revalidatePath('/settings')
     return { ok: true, message: 'Settings saved' }
@@ -71,7 +75,7 @@ export async function togglePolicy(policyId: string, enabled: boolean): Promise<
   try {
     const { session, tenant } = await requireContext()
     assertCan(session, 'policy.manage')
-    await db().from('policies').update({ enabled }).eq('tenant_id', tenant.id).eq('id', policyId)
+    mustWrite('policies toggle', await db().from('policies').update({ enabled }).eq('tenant_id', tenant.id).eq('id', policyId))
     await audit(session, { action: 'policy.toggled', targetType: 'policy', targetId: policyId, newState: { enabled } })
     revalidatePath('/settings/policies')
     return { ok: true }
@@ -85,9 +89,15 @@ export async function setResourceSensitivity(resourceId: string, isSensitive: bo
     const { session, tenant } = await requireContext()
     assertCan(session, 'policy.manage')
     const { data: prev } = await db().from('resources').select('display_name,is_sensitive,sensitivity_category').eq('tenant_id', tenant.id).eq('id', resourceId).single()
-    await db().from('resources').update({ is_sensitive: isSensitive, sensitivity_category: isSensitive ? category : null }).eq('tenant_id', tenant.id).eq('id', resourceId)
+    mustWrite(
+      'resources sensitivity',
+      await db().from('resources').update({ is_sensitive: isSensitive, sensitivity_category: isSensitive ? category : null }).eq('tenant_id', tenant.id).eq('id', resourceId),
+    )
     const overrides = { ...((tenant.settings.sensitivity_overrides as Record<string, string | null>) ?? {}), [prev?.display_name ?? resourceId]: isSensitive ? category : null }
-    await db().from('tenants').update({ settings: { ...tenant.settings, sensitivity_overrides: overrides } }).eq('id', tenant.id)
+    mustWrite(
+      'tenants sensitivity_overrides',
+      await db().from('tenants').update({ settings: { ...tenant.settings, sensitivity_overrides: overrides } }).eq('id', tenant.id),
+    )
     await audit(session, { action: 'resource.sensitivity_updated', targetType: 'resource', targetId: resourceId, targetLabel: prev?.display_name, previousState: prev, newState: { is_sensitive: isSensitive, sensitivity_category: category } })
     await rescoreTenant(tenant.id, null)
     revalidatePath(`/resources/${resourceId}`)
@@ -107,7 +117,10 @@ export async function addAdministrator(input: { email: string; name: string; rol
     const supabase = db()
     let { data: user } = await supabase.from('users').select('id').eq('email', email).maybeSingle()
     if (!user) {
-      const { data: created } = await supabase.from('users').insert({ email, display_name: input.name.trim() || email, ms_tenant_id: tenant.ms_tenant_id }).select('id').single()
+      const { data: created } = mustWrite(
+        'users insert',
+        await supabase.from('users').insert({ email, display_name: input.name.trim() || email, ms_tenant_id: tenant.ms_tenant_id }).select('id').single(),
+      )
       user = created
     }
     const { error } = await supabase.from('administrators').insert({ tenant_id: tenant.id, user_id: user!.id, role_key: input.role })
@@ -125,7 +138,10 @@ export async function changeAdministratorRole(adminId: string, role: RoleKey): P
     const { session, tenant } = await requireContext()
     assertCan(session, 'admin.manage')
     const { data: prev } = await db().from('administrators').select('role_key, user:users(email)').eq('tenant_id', tenant.id).eq('id', adminId).single()
-    await db().from('administrators').update({ role_key: role }).eq('tenant_id', tenant.id).eq('id', adminId)
+    mustWrite(
+      'administrators role',
+      await db().from('administrators').update({ role_key: role }).eq('tenant_id', tenant.id).eq('id', adminId),
+    )
     await audit(session, { action: 'admin.role_changed', targetType: 'administrator', targetId: adminId, targetLabel: (prev?.user as unknown as { email: string })?.email, previousState: { role: prev?.role_key }, newState: { role } })
     revalidatePath('/settings/administrators')
     return { ok: true }
@@ -141,7 +157,10 @@ export async function removeAdministrator(adminId: string): Promise<Result> {
     const { count } = await db().from('administrators').select('id', { count: 'exact', head: true }).eq('tenant_id', tenant.id).in('role_key', ['gs_admin', 'global_admin'])
     const { data: target } = await db().from('administrators').select('role_key, user:users(email)').eq('tenant_id', tenant.id).eq('id', adminId).single()
     if ((count ?? 0) <= 1 && ['gs_admin', 'global_admin'].includes(target?.role_key)) return { ok: false, error: 'Cannot remove the last administrator' }
-    await db().from('administrators').delete().eq('tenant_id', tenant.id).eq('id', adminId)
+    mustWrite(
+      'administrators delete',
+      await db().from('administrators').delete().eq('tenant_id', tenant.id).eq('id', adminId),
+    )
     await audit(session, { action: 'admin.removed', targetType: 'administrator', targetId: adminId, targetLabel: (target?.user as unknown as { email: string })?.email })
     revalidatePath('/settings/administrators')
     return { ok: true }
@@ -152,14 +171,17 @@ export async function removeAdministrator(adminId: string): Promise<Result> {
 
 export async function completeOnboarding(): Promise<void> {
   const { session, tenant } = await requireContext()
-  await db().from('tenants').update({ onboarding_completed_at: new Date().toISOString(), onboarding_step: 5 }).eq('id', tenant.id)
+  mustWrite(
+    'tenants onboarded',
+    await db().from('tenants').update({ onboarding_completed_at: new Date().toISOString(), onboarding_step: 5 }).eq('id', tenant.id),
+  )
   await audit(session, { action: 'tenant.onboarded', targetType: 'tenant', targetId: tenant.id })
   redirect('/dashboard')
 }
 
 export async function setOnboardingStep(step: number): Promise<void> {
   const { tenant } = await requireContext()
-  await db().from('tenants').update({ onboarding_step: step }).eq('id', tenant.id)
+  mustWrite('tenants onboarding_step', await db().from('tenants').update({ onboarding_step: step }).eq('id', tenant.id))
   revalidatePath('/onboarding')
 }
 

@@ -3,6 +3,7 @@ import { db } from '@/lib/supabase/admin'
 import { loadMailTenant, normalizeEmails, publicOrigin, sendMail } from '@/lib/email/mailer'
 import { reviewApprovalRequest, reviewAssigned, reviewDecision, reviewReminder } from '@/lib/email/templates'
 import { DEFAULT_REVIEW_WORKFLOW, type AccessReview, type ReviewWorkflowSettings } from '@/lib/types'
+import { mustWrite } from '@/lib/supabase/write'
 
 export function reviewWorkflowOf(settings: Record<string, unknown>): ReviewWorkflowSettings {
   const raw = (settings?.review_workflow as Partial<ReviewWorkflowSettings> | undefined) ?? {}
@@ -62,7 +63,12 @@ export async function notifyReviewers(tenantId: string, reviewId: string, approv
   if (to.length === 0) return { ok: true as const, skipped: true }
   const msg = reviewAssigned({ tenantName: tenant.display_name, reviewName: found.review.name, guestCount: found.guestCount, dueAt: found.review.due_at, description: found.review.description, origin: await publicOrigin(), reviewId, approvedBy })
   const res = await sendMail(tenant, { kind: 'review_assigned', to, subject: msg.subject, html: msg.html, relatedType: 'access_review', relatedId: reviewId })
-  if (res.ok) await db().from('access_reviews').update({ reviewers_notified_at: new Date().toISOString() }).eq('id', reviewId)
+  if (res.ok) {
+    mustWrite(
+      'access_reviews reviewers_notified_at',
+      await db().from('access_reviews').update({ reviewers_notified_at: new Date().toISOString() }).eq('id', reviewId),
+    )
+  }
   return res
 }
 
@@ -89,7 +95,12 @@ export async function remindReviewers(tenantId: string, reviewId: string) {
   const overdue = Boolean(found.review.due_at && new Date(found.review.due_at).getTime() < Date.now())
   const msg = reviewReminder({ tenantName: tenant.display_name, reviewName: found.review.name, pending, dueAt: found.review.due_at, overdue, origin: await publicOrigin(), reviewId })
   const res = await sendMail(tenant, { kind: 'review_reminder', to, subject: msg.subject, html: msg.html, relatedType: 'access_review', relatedId: reviewId })
-  if (res.ok) await supabase.from('access_reviews').update({ last_reminder_at: new Date().toISOString() }).eq('id', reviewId)
+  if (res.ok) {
+    mustWrite(
+      'access_reviews last_reminder_at',
+      await supabase.from('access_reviews').update({ last_reminder_at: new Date().toISOString() }).eq('id', reviewId),
+    )
+  }
   return res
 }
 

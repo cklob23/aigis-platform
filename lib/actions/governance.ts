@@ -9,6 +9,8 @@ import { audit } from '@/lib/audit'
 import { rescoreTenant } from '@/lib/scan/engine'
 import { withIdentityId } from '@/lib/identity/governance'
 import { loadGovernanceMaps } from '@/lib/identity/governance-maps'
+import { mustWrite } from '@/lib/supabase/write'
+import { attachReviewGuests, requireReviewHeader } from '@/lib/reviews/write'
 import { normalizeEmails } from '@/lib/email/mailer'
 import { isApprover, notifyApprovers, notifyRequester, notifyReviewers, remindReviewers, reviewWorkflowOf } from '@/lib/reviews/workflow'
 import type { DomainClassification, ResourceType, ReviewWorkflowSettings, ReviewScopeKind, ReviewReviewerKind, ReviewRecurrence, ReviewNoResponseAction } from '@/lib/types'
@@ -26,11 +28,14 @@ export async function classifyDomain(input: { domainId: string; classification: 
     const supabase = db()
     const { data: prev } = await supabase.from('external_domains').select('*').eq('tenant_id', tenant.id).eq('id', input.domainId).single()
     if (!prev) return { ok: false, error: 'Domain not found' }
-    await supabase
-      .from('external_domains')
-      .update({ classification: input.classification, business_owner: input.businessOwner || null, review_date: input.reviewDate || null, notes: input.notes || null })
-      .eq('tenant_id', tenant.id)
-      .eq('id', input.domainId)
+    mustWrite(
+      'external_domains classify',
+      await supabase
+        .from('external_domains')
+        .update({ classification: input.classification, business_owner: input.businessOwner || null, review_date: input.reviewDate || null, notes: input.notes || null })
+        .eq('tenant_id', tenant.id)
+        .eq('id', input.domainId),
+    )
     await audit(session, {
       action: 'domain.classified',
       targetType: 'external_domain',
@@ -72,7 +77,10 @@ export async function bulkClassifyDomains(input: { domainIds: string[]; classifi
     if (input.classification) patch.classification = input.classification
     if (owner) patch.business_owner = owner
     if (input.reviewDate) patch.review_date = input.reviewDate
-    await supabase.from('external_domains').update(patch).eq('tenant_id', tenant.id).in('id', rows.map((r) => r.id as string))
+    mustWrite(
+      'external_domains bulk classify',
+      await supabase.from('external_domains').update(patch).eq('tenant_id', tenant.id).in('id', rows.map((r) => r.id as string)),
+    )
 
     const correlationId = `bulk-${Date.now().toString(36)}`
     for (const prev of rows) {
@@ -133,7 +141,8 @@ export async function createAccessReview(input: {
     const reviewerEmails = normalizeEmails(input.reviewerEmails ?? '')
     const reviewers = reviewerEmails.length ? reviewerEmails : workflow.default_reviewer_emails
     const supabase = db()
-    const { data: review, error } = await supabase
+    const review = requireReviewHeader(
+      await supabase
       .from('access_reviews')
       .insert({
         tenant_id: tenant.id,
@@ -156,8 +165,8 @@ export async function createAccessReview(input: {
   },
       })
       .select('id')
-      .single()
-    if (error) throw error
+      .single(),
+    )
     const { data: memberships } = await supabase.from('resource_memberships').select('guest_id, resource:resources(id,display_name,resource_type,is_sensitive)').eq('tenant_id', tenant.id).in('guest_id', input.guestIds).is('removed_at', null)
     const snapByGuest = new Map<string, { id: string; name: string; type: ResourceType; sensitive: boolean }[]>()
     for (const m of memberships ?? []) {
@@ -168,8 +177,21 @@ export async function createAccessReview(input: {
       snapByGuest.set(m.guest_id as string, list)
     }
     const maps = await loadGovernanceMaps(tenant.id)
-    await supabase.from('review_items').insert(input.guestIds.map((gid) => withIdentityId({ tenant_id: tenant.id, review_id: review.id, guest_id: gid, resources_snapshot: snapByGuest.get(gid) ?? [] }, maps)))
-    await supabase.from('guest_identities').update({ review_status: 'pending' }).eq('tenant_id', tenant.id).in('id', input.guestIds)
+    await attachReviewGuests(
+      {
+        insertItems: (rows) => supabase.from('review_items').insert(rows),
+        updateGuestsPending: (ids) =>
+          supabase.from('guest_identities').update({ review_status: 'pending' }).eq('tenant_id', tenant.id).in('id', ids),
+        deleteReview: (id) => supabase.from('access_reviews').delete().eq('tenant_id', tenant.id).eq('id', id),
+      },
+      {
+        reviewId: review.id,
+        guestIds: input.guestIds,
+        items: input.guestIds.map((gid) =>
+          withIdentityId({ tenant_id: tenant.id, review_id: review.id, guest_id: gid, resources_snapshot: snapByGuest.get(gid) ?? [] }, maps),
+        ),
+      },
+    )
     await audit(session, { action: 'review.created', targetType: 'access_review', targetId: review.id, targetLabel: input.name, newState: { guests: input.guestIds.length, due_in_days: input.dueInDays, needs_approval: needsApproval, reviewers } })
 
     let notice = ''
@@ -206,11 +228,14 @@ export async function approveReview(input: { reviewId: string; note?: string }):
     if (!review) return { ok: false, error: 'Review not found' }
     if (review.approval_status !== 'pending') return { ok: false, error: 'This review is not awaiting approval.' }
     const now = new Date().toISOString()
-    await supabase
-      .from('access_reviews')
-      .update({ status: 'active', approval_status: 'approved', approved_by: session.demo ? null : session.userId, approved_by_email: session.email, approved_at: now, approval_note: input.note?.trim() || null })
-      .eq('tenant_id', tenant.id)
-      .eq('id', input.reviewId)
+    mustWrite(
+      'access_reviews approve',
+      await supabase
+        .from('access_reviews')
+        .update({ status: 'active', approval_status: 'approved', approved_by: session.demo ? null : session.userId, approved_by_email: session.email, approved_at: now, approval_note: input.note?.trim() || null })
+        .eq('tenant_id', tenant.id)
+        .eq('id', input.reviewId),
+    )
     await audit(session, { action: 'review.approved', targetType: 'access_review', targetId: input.reviewId, targetLabel: review.name as string, reason: input.note })
     const [reviewers, requester] = await Promise.all([notifyReviewers(tenant.id, input.reviewId, session.email), notifyRequester(tenant.id, input.reviewId, true, session.email, input.note)])
     revalidatePath('/reviews')
@@ -236,14 +261,22 @@ export async function rejectReview(input: { reviewId: string; note?: string }): 
     if (!review) return { ok: false, error: 'Review not found' }
     if (review.approval_status !== 'pending') return { ok: false, error: 'This review is not awaiting approval.' }
     const now = new Date().toISOString()
-    await supabase
-      .from('access_reviews')
-      .update({ status: 'cancelled', approval_status: 'rejected', approved_by: session.demo ? null : session.userId, approved_by_email: session.email, approved_at: now, approval_note: input.note?.trim() || null, completed_at: now })
-      .eq('tenant_id', tenant.id)
-      .eq('id', input.reviewId)
+    mustWrite(
+      'access_reviews reject',
+      await supabase
+        .from('access_reviews')
+        .update({ status: 'cancelled', approval_status: 'rejected', approved_by: session.demo ? null : session.userId, approved_by_email: session.email, approved_at: now, approval_note: input.note?.trim() || null, completed_at: now })
+        .eq('tenant_id', tenant.id)
+        .eq('id', input.reviewId),
+    )
     const { data: items } = await supabase.from('review_items').select('guest_id').eq('tenant_id', tenant.id).eq('review_id', input.reviewId)
     const guestIds = (items ?? []).map((i) => i.guest_id as string)
-    if (guestIds.length) await supabase.from('guest_identities').update({ review_status: 'never_reviewed' }).eq('tenant_id', tenant.id).in('id', guestIds).eq('review_status', 'pending')
+    if (guestIds.length) {
+      mustWrite(
+        'guest_identities clear pending',
+        await supabase.from('guest_identities').update({ review_status: 'never_reviewed' }).eq('tenant_id', tenant.id).in('id', guestIds).eq('review_status', 'pending'),
+      )
+    }
     await audit(session, { action: 'review.rejected', targetType: 'access_review', targetId: input.reviewId, targetLabel: review.name as string, reason: input.note })
     await notifyRequester(tenant.id, input.reviewId, false, session.email, input.note)
     revalidatePath('/reviews')
@@ -275,7 +308,10 @@ export async function updateReviewerEmails(input: { reviewId: string; reviewerEm
     const { session, tenant } = await requireContext()
     assertCan(session, 'review.create')
     const reviewers = normalizeEmails(input.reviewerEmails)
-    await db().from('access_reviews').update({ reviewer_emails: reviewers }).eq('tenant_id', tenant.id).eq('id', input.reviewId)
+    mustWrite(
+      'access_reviews reviewers',
+      await db().from('access_reviews').update({ reviewer_emails: reviewers }).eq('tenant_id', tenant.id).eq('id', input.reviewId),
+    )
     await audit(session, { action: 'review.reviewers_updated', targetType: 'access_review', targetId: input.reviewId, newState: { reviewers } })
     revalidatePath(`/reviews/${input.reviewId}`)
     return { ok: true, message: 'Reviewers updated' }
@@ -299,7 +335,10 @@ export async function updateReviewWorkflow(input: ReviewWorkflowSettings): Promi
     }
     if (next.require_approval && next.approver_emails.length === 0) return { ok: false, error: 'Add at least one approver email before requiring approval.' }
     const prev = tenant.settings.review_workflow ?? null
-    await db().from('tenants').update({ settings: { ...tenant.settings, review_workflow: next } }).eq('id', tenant.id)
+    mustWrite(
+      'tenants review_workflow',
+      await db().from('tenants').update({ settings: { ...tenant.settings, review_workflow: next } }).eq('id', tenant.id),
+    )
     await audit(session, { action: 'settings.review_workflow_updated', targetType: 'tenant', targetId: tenant.id, previousState: prev, newState: next })
     revalidatePath('/settings/reviews')
     return { ok: true, message: 'Review workflow saved' }
@@ -318,10 +357,19 @@ export async function decideReviewItem(input: { itemId: string; decision: 'appro
     const parentStatus = (item.review as unknown as { status: string } | null)?.status
     if (parentStatus !== 'active') return { ok: false, error: parentStatus === 'draft' ? 'This review is awaiting approval.' : 'This review is no longer active.' }
     const now = new Date().toISOString()
-    await supabase.from('review_items').update({ status: 'decided', decision: input.decision, decided_at: now }).eq('id', input.itemId)
-    await supabase.from('review_decisions').insert({ tenant_id: tenant.id, review_item_id: input.itemId, reviewer_user_id: session.demo ? null : session.userId, reviewer_email: session.email, decision: input.decision, comment: input.comment || null, resources_reviewed: item.resources_snapshot })
+    mustWrite(
+      'review_items decide',
+      await supabase.from('review_items').update({ status: 'decided', decision: input.decision, decided_at: now }).eq('id', input.itemId),
+    )
+    mustWrite(
+      'review_decisions insert',
+      await supabase.from('review_decisions').insert({ tenant_id: tenant.id, review_item_id: input.itemId, reviewer_user_id: session.demo ? null : session.userId, reviewer_email: session.email, decision: input.decision, comment: input.comment || null, resources_reviewed: item.resources_snapshot }),
+    )
     const reviewStatus = input.decision === 'approve' ? 'approved' : input.decision === 'extend' ? 'extended' : input.decision === 'investigate' ? 'investigating' : 'pending'
-    await supabase.from('guest_identities').update({ review_status: reviewStatus, last_reviewed_at: input.decision === 'approve' || input.decision === 'extend' ? now : undefined }).eq('id', item.guest_id)
+    mustWrite(
+      'guest_identities review_status',
+      await supabase.from('guest_identities').update({ review_status: reviewStatus, last_reviewed_at: input.decision === 'approve' || input.decision === 'extend' ? now : undefined }).eq('id', item.guest_id),
+    )
     const guest = item.guest as unknown as { display_name: string | null; email: string | null }
     await audit(session, { action: 'review.decided', targetType: 'review_item', targetId: input.itemId, targetLabel: guest?.display_name ?? guest?.email ?? item.guest_id, newState: { decision: input.decision }, reason: input.comment })
     revalidatePath(`/reviews/${item.review_id}`)
@@ -339,7 +387,10 @@ export async function completeReview(reviewId: string): Promise<ActionResult> {
     const supabase = db()
     const { count } = await supabase.from('review_items').select('id', { count: 'exact', head: true }).eq('tenant_id', tenant.id).eq('review_id', reviewId).eq('status', 'pending')
     if ((count ?? 0) > 0) return { ok: false, error: `${count} items still pending a decision` }
-    await supabase.from('access_reviews').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('tenant_id', tenant.id).eq('id', reviewId)
+    mustWrite(
+      'access_reviews complete',
+      await supabase.from('access_reviews').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('tenant_id', tenant.id).eq('id', reviewId),
+    )
     await audit(session, { action: 'review.completed', targetType: 'access_review', targetId: reviewId })
     revalidatePath('/reviews')
     revalidatePath(`/reviews/${reviewId}`)
@@ -353,7 +404,10 @@ export async function acknowledgeAlert(alertId: string): Promise<ActionResult> {
   try {
     const { session, tenant } = await requireContext()
     assertCan(session, 'review.decide')
-    await db().from('alerts').update({ status: 'acknowledged', acknowledged_at: new Date().toISOString() }).eq('tenant_id', tenant.id).eq('id', alertId)
+    mustWrite(
+      'alerts acknowledge',
+      await db().from('alerts').update({ status: 'acknowledged', acknowledged_at: new Date().toISOString() }).eq('tenant_id', tenant.id).eq('id', alertId),
+    )
     await audit(session, { action: 'alert.acknowledged', targetType: 'alert', targetId: alertId })
     revalidatePath('/alerts')
     revalidatePath('/dashboard')
@@ -367,7 +421,10 @@ export async function dismissFinding(findingId: string): Promise<ActionResult> {
   try {
     const { session, tenant } = await requireContext()
     assertCan(session, 'review.decide')
-    await db().from('risk_findings').update({ status: 'dismissed', resolved_at: new Date().toISOString() }).eq('tenant_id', tenant.id).eq('id', findingId)
+    mustWrite(
+      'risk_findings dismiss',
+      await db().from('risk_findings').update({ status: 'dismissed', resolved_at: new Date().toISOString() }).eq('tenant_id', tenant.id).eq('id', findingId),
+    )
     await audit(session, { action: 'finding.dismissed', targetType: 'risk_finding', targetId: findingId })
     revalidatePath('/dashboard')
     return { ok: true }

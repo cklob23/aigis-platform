@@ -4,6 +4,7 @@ import { db } from '@/lib/supabase/admin'
 import { env } from '@/lib/env'
 import { GraphClient, GraphError } from '@/lib/graph/client'
 import type { EmailSettings } from '@/lib/types'
+import { mustWrite, WriteFailedError } from '@/lib/supabase/write'
 
 export type MailTenant = {
   id: string
@@ -90,17 +91,20 @@ export async function sendMail(tenant: MailTenant, mail: OutboundMail): Promise<
   const { sender_upn, reply_to } = emailSettingsOf(tenant)
 
   const log = async (status: 'sent' | 'failed' | 'skipped', error?: string) => {
-    await supabase.from('email_log').insert({
-      tenant_id: tenant.id,
-      kind: mail.kind,
-      recipients: [...to, ...cc],
-      subject: mail.subject,
-      status,
-      error: error ?? null,
-      sender: sender_upn,
-      related_type: mail.relatedType ?? null,
-      related_id: mail.relatedId ?? null,
-    })
+    mustWrite(
+      'email_log insert',
+      await supabase.from('email_log').insert({
+        tenant_id: tenant.id,
+        kind: mail.kind,
+        recipients: [...to, ...cc],
+        subject: mail.subject,
+        status,
+        error: error ?? null,
+        sender: sender_upn,
+        related_type: mail.relatedType ?? null,
+        related_id: mail.relatedId ?? null,
+      }),
+    )
   }
 
   if (to.length === 0) {
@@ -131,6 +135,7 @@ export async function sendMail(tenant: MailTenant, mail: OutboundMail): Promise<
     await log('sent')
     return { ok: true }
   } catch (err) {
+    if (err instanceof WriteFailedError) throw err
     const friendly = friendlyGraphError(err)
     await log('failed', friendly.error)
     return { ok: false, ...friendly }

@@ -5,6 +5,7 @@ import { encryptSecret } from '@/lib/auth/crypto'
 import { db } from '@/lib/supabase/admin'
 import { audit } from '@/lib/audit'
 import type { RoleKey } from '@/lib/auth/rbac'
+import { mustWrite } from '@/lib/supabase/write'
 
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams
@@ -44,23 +45,54 @@ export async function GET(req: NextRequest) {
     let role: RoleKey = 'read_only'
     if (!tenant) {
       // First sign-in from this Microsoft tenant: bootstrap organization + tenant; the first user becomes admin.
-      const { data: org } = await supabase.from('organizations').insert({ name: email.split('@')[1] ?? 'New organization' }).select('id').single()
-      const { data: created } = await supabase
-        .from('tenants')
-        .insert({ organization_id: org!.id, ms_tenant_id: claims.tid, display_name: email.split('@')[1] ?? 'Microsoft 365 tenant', connection_status: 'consent_required' })
-        .select('id,organization_id')
-        .single()
-      await supabase.from('subscriptions').insert({ organization_id: org!.id, plan: 'trial', status: 'active', current_period_end: new Date(Date.now() + 14 * 86_400_000).toISOString() })
-      tenant = created
-      await supabase.from('administrators').insert({ tenant_id: tenant!.id, user_id: user.id, role_key: 'gs_admin' })
+      const { data: org } = mustWrite(
+        'organizations insert',
+        await supabase.from('organizations').insert({ name: email.split('@')[1] ?? 'New organization' }).select('id').single(),
+      )
+      if (!org?.id) throw new Error('organizations insert: missing id')
+      try {
+        const { data: created } = mustWrite(
+          'tenants insert',
+          await supabase
+            .from('tenants')
+            .insert({ organization_id: org.id, ms_tenant_id: claims.tid, display_name: email.split('@')[1] ?? 'Microsoft 365 tenant', connection_status: 'consent_required' })
+            .select('id,organization_id')
+            .single(),
+        )
+        if (!created?.id) throw new Error('tenants insert: missing id')
+        mustWrite(
+          'subscriptions insert',
+          await supabase.from('subscriptions').insert({ organization_id: org.id, plan: 'trial', status: 'active', current_period_end: new Date(Date.now() + 14 * 86_400_000).toISOString() }),
+        )
+        tenant = created
+        mustWrite(
+          'administrators insert',
+          await supabase.from('administrators').insert({ tenant_id: tenant.id, user_id: user.id, role_key: 'gs_admin' }),
+        )
+      } catch (err) {
+        try {
+          await supabase.from('tenants').delete().eq('organization_id', org.id)
+        } catch {
+          // Keep the original bootstrap error.
+        }
+        try {
+          await supabase.from('organizations').delete().eq('id', org.id)
+        } catch {
+          // Keep the original bootstrap error.
+        }
+        throw err
+      }
       role = 'gs_admin'
-      await audit({ tenantId: tenant!.id, userId: user.id, email }, { action: 'tenant.created', targetType: 'tenant', targetId: tenant!.id, targetLabel: claims.tid })
+      await audit({ tenantId: tenant.id, userId: user.id, email }, { action: 'tenant.created', targetType: 'tenant', targetId: tenant.id, targetLabel: claims.tid })
     } else {
       const { data: admin } = await supabase.from('administrators').select('role_key').eq('tenant_id', tenant.id).eq('user_id', user.id).maybeSingle()
       if (!admin) {
         const { count } = await supabase.from('administrators').select('id', { count: 'exact', head: true }).eq('tenant_id', tenant.id)
         if ((count ?? 0) === 0) {
-          await supabase.from('administrators').insert({ tenant_id: tenant.id, user_id: user.id, role_key: 'gs_admin' })
+          mustWrite(
+            'administrators insert',
+            await supabase.from('administrators').insert({ tenant_id: tenant.id, user_id: user.id, role_key: 'gs_admin' }),
+          )
           role = 'gs_admin'
         } else {
           return fail('not_an_administrator')
@@ -69,17 +101,20 @@ export async function GET(req: NextRequest) {
     }
 
     if (tokens.refresh_token) {
-      await supabase.from('oauth_tokens').upsert(
-        {
-          tenant_id: tenant!.id,
-          user_id: user.id,
-          provider: 'microsoft',
-          encrypted_refresh_token: encryptSecret(tokens.refresh_token),
-          scopes: (tokens.scope ?? '').split(' ').filter(Boolean),
-          expires_at: new Date(Date.now() + 90 * 86_400_000).toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'tenant_id,user_id,provider' },
+      mustWrite(
+        'oauth_tokens upsert',
+        await supabase.from('oauth_tokens').upsert(
+          {
+            tenant_id: tenant!.id,
+            user_id: user.id,
+            provider: 'microsoft',
+            encrypted_refresh_token: encryptSecret(tokens.refresh_token),
+            scopes: (tokens.scope ?? '').split(' ').filter(Boolean),
+            expires_at: new Date(Date.now() + 90 * 86_400_000).toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'tenant_id,user_id,provider' },
+        ),
       )
     }
 

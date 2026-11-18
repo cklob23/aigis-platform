@@ -10,6 +10,8 @@ import { GraphClient } from '@/lib/graph/client'
 import { deleteUser, removeGroupMember, removeGroupOwner, revokeSessions, setAccountEnabled } from '@/lib/graph/queries'
 import { rescoreTenant } from '@/lib/scan/engine'
 import { requireIdentityId } from '@/lib/identity/governance'
+import { mustWrite, type WriteTask } from '@/lib/supabase/write'
+import { persistRemediationEffects, requireRemediationAction } from '@/lib/remediation/persist'
 
 export type RemediationType = 'remove_from_resources' | 'disable_guest' | 'remove_all_access' | 'delete_guest'
 
@@ -42,21 +44,23 @@ export async function remediateGuest(input: { guestId: string; actionType: Remed
     const canExecute = enforcementOn && can(session.role, 'remediation.execute')
 
     const identityId = requireIdentityId(guest)
-    const { data: action } = await supabase
-      .from('remediation_actions')
-      .insert({
-        tenant_id: tenant.id,
-        guest_id: input.guestId,
-        identity_id: identityId,
-        action_type: input.actionType,
-        target_resources: targets.map((t) => ({ id: t.id, name: t.display_name, type: t.resource_type })),
-        status: canExecute ? 'executing' : 'pending',
-        requested_by: session.demo ? null : session.userId,
-        reason: input.reason,
-        correlation_id: correlationId,
-      })
-      .select('id')
-      .single()
+    const action = requireRemediationAction(
+      await supabase
+        .from('remediation_actions')
+        .insert({
+          tenant_id: tenant.id,
+          guest_id: input.guestId,
+          identity_id: identityId,
+          action_type: input.actionType,
+          target_resources: targets.map((t) => ({ id: t.id, name: t.display_name, type: t.resource_type })),
+          status: canExecute ? 'executing' : 'pending',
+          requested_by: session.demo ? null : session.userId,
+          reason: input.reason,
+          correlation_id: correlationId,
+        })
+        .select('id')
+        .single(),
+    )
 
     await audit(session, {
       action: canExecute ? 'remediation.executing' : 'remediation.requested',
@@ -104,11 +108,6 @@ export async function remediateGuest(input: { guestId: string; actionType: Remed
       result.simulated = true
     }
 
-    if (targets.length) await supabase.from('resource_memberships').update({ removed_at: now }).in('id', targets.map((t) => t.membershipId))
-    for (const t of targets) {
-      const { data: r } = await supabase.from('resources').select('external_member_count').eq('id', t.id).single()
-      await supabase.from('resources').update({ external_member_count: Math.max(0, (r?.external_member_count ?? 1) - 1) }).eq('id', t.id)
-    }
     const guestUpdate: Record<string, unknown> = {}
     if (input.actionType === 'disable_guest' || input.actionType === 'remove_all_access') guestUpdate.account_enabled = false
     if (input.actionType === 'delete_guest') {
@@ -116,9 +115,50 @@ export async function remediateGuest(input: { guestId: string; actionType: Remed
       guestUpdate.review_status = 'removed'
     }
     if (input.actionType === 'remove_all_access') guestUpdate.review_status = 'removed'
-    if (Object.keys(guestUpdate).length) await supabase.from('guest_identities').update(guestUpdate).eq('id', input.guestId)
-    await supabase.from('guest_activity').insert({ tenant_id: tenant.id, guest_id: input.guestId, identity_id: identityId, activity_type: input.actionType === 'delete_guest' ? 'disabled' : 'membership_removed', details: { action: input.actionType, resources: result.removed, by: session.email } })
-    await supabase.from('remediation_actions').update({ status: (result.errors as string[]).length ? 'failed' : 'completed', executed_at: now, result }).eq('id', action!.id)
+    const effectWrites: Array<{ label: string; run: () => WriteTask }> = []
+    if (targets.length) {
+      effectWrites.push({
+        label: 'resource_memberships soft-remove',
+        run: () => supabase.from('resource_memberships').update({ removed_at: now }).in('id', targets.map((t) => t.membershipId)),
+      })
+    }
+    for (const t of targets) {
+      effectWrites.push({
+        label: `resources member count ${t.id}`,
+        run: async () => {
+          const { data: r } = await supabase.from('resources').select('external_member_count').eq('id', t.id).single()
+          return await supabase.from('resources').update({ external_member_count: Math.max(0, (r?.external_member_count ?? 1) - 1) }).eq('id', t.id)
+        },
+      })
+    }
+    if (Object.keys(guestUpdate).length) {
+      effectWrites.push({
+        label: 'guest_identities remediation',
+        run: () => supabase.from('guest_identities').update(guestUpdate).eq('id', input.guestId),
+      })
+    }
+    effectWrites.push({
+      label: 'guest_activity insert',
+      run: () =>
+        supabase.from('guest_activity').insert({
+          tenant_id: tenant.id,
+          guest_id: input.guestId,
+          identity_id: identityId,
+          activity_type: input.actionType === 'delete_guest' ? 'disabled' : 'membership_removed',
+          details: { action: input.actionType, resources: result.removed, by: session.email },
+        }),
+    })
+    effectWrites.push({
+      label: 'remediation_actions complete',
+      run: () =>
+        supabase
+          .from('remediation_actions')
+          .update({ status: (result.errors as string[]).length ? 'failed' : 'completed', executed_at: now, result })
+          .eq('id', action.id),
+    })
+    await persistRemediationEffects(effectWrites, (message) =>
+      supabase.from('remediation_actions').update({ status: 'failed', executed_at: now, result: { ...result, write_error: message } }).eq('id', action.id),
+    )
     await audit(session, { action: 'remediation.executed', targetType: 'guest', targetId: input.guestId, targetLabel: guest.email ?? guest.display_name, previousState: { memberships: targets.length, account_enabled: guest.account_enabled }, newState: { ...result, ...guestUpdate }, reason: input.reason, correlationId })
     await rescoreTenant(tenant.id, null)
 
@@ -147,7 +187,10 @@ export async function approvePendingRemediation(actionId: string): Promise<Resul
     if (!tenant.is_demo && tenant.settings.enforcement_mode !== 'enforce') {
       return { ok: false, error: 'Enforcement is off. Enable it in Settings → General before approving changes to Entra.' }
     }
-    await db().from('remediation_actions').update({ status: 'cancelled' }).eq('id', actionId)
+    mustWrite(
+      'remediation_actions cancel',
+      await db().from('remediation_actions').update({ status: 'cancelled' }).eq('id', actionId),
+    )
     return remediateGuest({
       guestId: action.guest_id,
       actionType: action.action_type,
