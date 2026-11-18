@@ -57,4 +57,16 @@ describe('attachReviewGuests', () => {
     ).rejects.toThrow('guest_identities review_status: row locked')
     expect(db.deleteReview).toHaveBeenCalledWith('rev-1')
   })
+
+  it('includes a failed header delete in the thrown write error', async () => {
+    const db = {
+      insertItems: vi.fn(() => fail('null identity_id')),
+      updateGuestsPending: vi.fn(() => ok(null)),
+      deleteReview: vi.fn(() => fail('still referenced')),
+    }
+    await expect(
+      attachReviewGuests(db, { reviewId: 'rev-1', items: [{ guest_id: 'g1' }], guestIds: ['g1'] }),
+    ).rejects.toThrow('review_items insert: null identity_id (rollback also failed: still referenced)')
+    expect(db.deleteReview).toHaveBeenCalledWith('rev-1')
+  })
 })

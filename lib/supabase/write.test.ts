@@ -37,6 +37,14 @@ describe('mustWriteOrRollback', () => {
     })
     await expect(
       mustWriteOrRollback('review_items insert', { error: { message: 'check constraint' } }, rollback),
-    ).rejects.toThrow('review_items insert: check constraint')
+    ).rejects.toThrow('review_items insert: check constraint (rollback also failed: delete failed)')
+  })
+
+  it('surfaces a supabase rollback error instead of leaving the header silently', async () => {
+    const rollback = vi.fn(async () => ({ error: { message: 'fk violation' } }))
+    await expect(
+      mustWriteOrRollback('review_items insert', { error: { message: 'null identity_id' } }, rollback),
+    ).rejects.toThrow('review_items insert: null identity_id (rollback also failed: fk violation)')
+    expect(rollback).toHaveBeenCalledTimes(1)
   })
 })
