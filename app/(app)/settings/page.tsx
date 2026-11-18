@@ -7,8 +7,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { NotificationSettingsForm } from '@/components/settings/notification-settings-form'
 import { EnforcementSwitch } from '@/components/settings/enforcement-switch'
+import { AiSettingsForm } from '@/components/settings/ai-settings-form'
 import { ResetDemoButton } from '@/components/settings/reset-demo-button'
 import { formatDate } from '@/lib/format'
+import { parseAiSettings } from '@/lib/ai/recommend'
 
 export default async function GeneralSettingsPage() {
   const { session, tenant } = await requireOnboarded()
@@ -69,6 +71,19 @@ export default async function GeneralSettingsPage() {
         </CardHeader>
         <CardContent>
           <EnforcementSwitch disabled={!canManage || tenant.is_demo} initial={tenant.settings.enforcement_mode === 'enforce' ? 'enforce' : 'monitor'} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>AI explanations</CardTitle>
+          <CardDescription>
+            Off by default. Recommend and explain only. Enabling this flag does not change enforcement mode and never
+            grants autonomous access changes.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AiSettingsForm disabled={!canManage} initialEnabled={parseAiSettings(tenant.settings).enabled} />
         </CardContent>
       </Card>
 

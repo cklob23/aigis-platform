@@ -18,6 +18,8 @@ import { formatDate, relativeDays, daysBetween, titleCase } from '@/lib/format'
 import { RESOURCE_TYPE_LABELS } from '@/lib/types'
 import { describeRecommendation } from '@/lib/risk/recommendation'
 import { describeOwner, ownerKindLabel } from '@/lib/identity/owner'
+import { parseAiSettings } from '@/lib/ai/recommend'
+import { ExplainRecommendation } from '@/components/guests/explain-recommendation'
 import { cn } from '@/lib/utils'
 
 export default async function GuestDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -25,7 +27,8 @@ export default async function GuestDetailPage({ params }: { params: Promise<{ id
   const { session, tenant } = await requireOnboarded()
   const data = await getGuestDetail(tenant.id, id)
   if (!data) notFound()
-  const { guest: g, identity, ownerGuest, memberships, activity, history, reviews, remediations, domain, organization } = data
+  const { guest: g, identity, ownerGuest, memberships, activity, history, reviews, remediations, domain, organization, explanation } = data
+  const aiEnabled = parseAiSettings(tenant.settings).enabled
   const owner = describeOwner(
     identity ?? {
       owner_kind: g.sponsor_ms_object_id || g.sponsor_email ? 'sponsor' : 'none',
@@ -159,6 +162,11 @@ export default async function GuestDetailPage({ params }: { params: Promise<{ id
               </div>
             ))}
             {factors.length === 0 && <p className="text-muted-foreground text-sm">No risk factors. This identity looks healthy.</p>}
+            <ExplainRecommendation
+              guestId={g.id}
+              enabled={aiEnabled}
+              initial={explanation ? { explanation: explanation.explanation as string, created_at: explanation.created_at as string } : null}
+            />
           </CardContent>
         </Card>
 

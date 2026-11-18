@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 
 export const metadata = { title: 'Audit log' }
 
-const CATEGORIES = ['all', 'auth', 'tenant', 'scan', 'domain', 'review', 'remediation', 'policy', 'admin', 'settings', 'report']
+const CATEGORIES = ['all', 'auth', 'tenant', 'scan', 'domain', 'review', 'remediation', 'policy', 'admin', 'settings', 'ai', 'report']
 
 export default async function AuditPage({ searchParams }: { searchParams: Promise<{ q?: string; action?: string; page?: string }> }) {
   const sp = await searchParams
