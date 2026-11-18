@@ -107,8 +107,9 @@ export type IdentityAccountSource = 'entra'
 export type IdentityAccountKind = 'user' | 'guest' | 'sp' | 'workload' | 'agent'
 export type IdentityRelationType = 'owns' | 'sponsors' | 'same_as' | 'created_by'
 
-/** AI recommend/explain is on-demand and off until a later PR. No autonomous writes. */
-export const DEFAULT_AI_SETTINGS = { enabled: false, mode: 'on_demand' as const }
+/** AI recommend/explain is on-demand and off by default. No autonomous writes. */
+export type AiSettings = { enabled: boolean; mode: 'on_demand' }
+export const DEFAULT_AI_SETTINGS: AiSettings = { enabled: false, mode: 'on_demand' }
 
 export type Identity = {
   id: string
