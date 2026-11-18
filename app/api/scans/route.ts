@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { after } from 'next/server'
-import { getSession, getTenant } from '@/lib/auth/current'
+import { getSession, getTenant, withLiveRole } from '@/lib/auth/current'
 import { can } from '@/lib/auth/rbac'
 import { createScanJob, runScan } from '@/lib/scan/engine'
 import { audit } from '@/lib/audit'
@@ -9,8 +9,10 @@ import { db } from '@/lib/supabase/admin'
 export const maxDuration = 300
 
 export async function POST(req: Request) {
-  const session = await getSession()
-  if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const raw = await getSession()
+  if (!raw) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const session = await withLiveRole(raw)
+  if (!session) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   if (!can(session.role, 'scan.run')) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   const tenant = await getTenant(session.tenantId)
   if (!tenant) return NextResponse.json({ error: 'tenant_missing' }, { status: 404 })

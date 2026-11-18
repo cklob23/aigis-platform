@@ -72,13 +72,25 @@ function NavIcon({ icon: Icon }: { icon: React.ComponentType<{ className?: strin
   return pending ? <Spinner className="size-4" /> : <Icon />
 }
 
-export function AppSidebar({ user, tenant, counts }: { user: SidebarUser; tenant: SidebarTenant; counts: SidebarCounts }) {
+export function AppSidebar({
+  user,
+  tenant,
+  counts,
+  canViewAudit = true,
+}: {
+  user: SidebarUser
+  tenant: SidebarTenant
+  counts: SidebarCounts
+  canViewAudit?: boolean
+}) {
   const pathname = usePathname()
   const signOutFormRef = useRef<HTMLFormElement>(null)
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`)
 
   const renderGroup = (items: typeof NAV | typeof GOVERN) =>
-    items.map((item) => {
+    items
+      .filter((item) => item.href !== '/audit' || canViewAudit)
+      .map((item) => {
       const badgeKey = 'badge' in item && item.badge ? item.badge : null
       const badge = badgeKey ? counts[badgeKey] : 0
       const active = isActive(item.href)
