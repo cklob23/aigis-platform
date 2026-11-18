@@ -11,6 +11,7 @@ import { GuestTable } from '@/components/guests/guest-table'
 import { CauseGroups } from '@/components/guests/cause-groups'
 import { Pagination } from '@/components/layout/pagination'
 import { formatNumber } from '@/lib/format'
+import { guestsEmptyCopy } from '@/lib/guests-empty-copy'
 
 export const metadata = { title: 'External identities' }
 
@@ -58,6 +59,7 @@ export default async function GuestsPage({ searchParams }: { searchParams: Promi
         exportHref={`/api/export?${exportParams.toString()}`}
         scopeCounts={scopeCounts}
         defaultReviewerEmails={workflow.default_reviewer_emails}
+        emptyMessage={guestsEmptyCopy(filters)}
       />
       <Pagination page={page} pageSize={pageSize} total={total} basePath="/guests" params={sp} />
     </>
