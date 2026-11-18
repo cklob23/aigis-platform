@@ -4,6 +4,7 @@ import { loadMailTenant, sendMail, publicOrigin } from '@/lib/email/mailer'
 import { alertDigest, type AlertEmailItem } from '@/lib/email/templates'
 import { ALERT_TRIGGER_LABELS, type AlertRule, type ApprovalState, type RiskLevel } from '@/lib/types'
 import { requireIdentityId } from '@/lib/identity/governance'
+import { persistNewAlerts, stampAlertEmail } from '@/lib/alerts/persist'
 
 const RISK_ORDER: Record<RiskLevel, number> = { low: 0, medium: 1, high: 2, critical: 3 }
 const DAY = 86_400_000
@@ -97,10 +98,14 @@ export async function evaluateAlertRules(tenantId: string, opts: EvaluateOptions
     const fresh = candidates.filter((c) => !existing.has(c.dedupe_key))
     if (fresh.length === 0) continue
 
-    const { data: inserted } = await supabase
-      .from('alerts')
-      .insert(
-        fresh.map((c) => ({
+    const insertedIds = await persistNewAlerts(
+      {
+        insertAlerts: (rows) => supabase.from('alerts').insert(rows).select('id'),
+        touchRule: (ruleId) => supabase.from('alert_rules').update({ last_fired_at: new Date().toISOString() }).eq('id', ruleId),
+      },
+      {
+        ruleId: rule.id,
+        rows: fresh.map((c) => ({
           tenant_id: tenantId,
           rule_id: rule.id,
           alert_type: rule.trigger_type,
@@ -115,11 +120,9 @@ export async function evaluateAlertRules(tenantId: string, opts: EvaluateOptions
           dedupe_key: c.dedupe_key,
           metadata: { ...(c.metadata ?? {}), scan_job_id: opts.scanJobId ?? null },
         })),
-      )
-      .select('id')
-    const insertedIds = (inserted ?? []).map((r) => r.id as string)
+      },
+    )
     created += insertedIds.length
-    await supabase.from('alert_rules').update({ last_fired_at: new Date().toISOString() }).eq('id', rule.id)
 
     if (rule.notify_email && rule.recipients.length > 0 && insertedIds.length > 0) {
       const mail = alertDigest({
@@ -132,7 +135,11 @@ export async function evaluateAlertRules(tenantId: string, opts: EvaluateOptions
       })
       const result = await sendMail(tenant, { kind: 'alert', to: rule.recipients, subject: mail.subject, html: mail.html, relatedType: 'alert_rule', relatedId: rule.id })
       const stamp = result.ok ? { email_sent_at: new Date().toISOString(), email_error: null } : { email_error: result.error }
-      await supabase.from('alerts').update(stamp).in('id', insertedIds)
+      await stampAlertEmail(
+        { stampAlerts: (ids, row) => supabase.from('alerts').update(row).in('id', ids) },
+        insertedIds,
+        stamp,
+      )
       if (result.ok && !result.skipped) emailed += 1
     }
   }

@@ -34,6 +34,13 @@ import { writeGuestInventory } from '@/lib/identity/write-inventory'
 import { requireIdentityId, withMembershipIds } from '@/lib/identity/governance'
 import { loadGovernanceMaps } from '@/lib/identity/governance-maps'
 import { evaluateAlertRules } from '@/lib/alerts/evaluate'
+import { mustWrite } from '@/lib/supabase/write'
+import {
+  persistGuestRiskUpdates,
+  persistMembershipUpserts,
+  persistRiskFindings,
+  persistRiskScores,
+} from '@/lib/scan/persist'
 
 function domainOf(user: GraphUser) {
   const mail = user.mail ?? ''
@@ -51,7 +58,7 @@ function groupType(g: GraphGroup): ResourceType {
 }
 
 async function setProgress(jobId: string, progress: Record<string, unknown>) {
-  await db().from('scan_jobs').update({ progress }).eq('id', jobId)
+  mustWrite('scan_jobs progress', await db().from('scan_jobs').update({ progress }).eq('id', jobId))
 }
 
 export async function createScanJob(tenantId: string, scanType: string, startedBy: string | null) {
@@ -108,17 +115,21 @@ export async function rescoreTenant(tenantId: string, scanJobId: string | null, 
     updates.push({ id: g.id, risk_score: risk.score, risk_level: risk.level, risk_factors: risk.factors, recommended_action: risk.recommendedAction })
     scoreRows.push({ tenant_id: tenantId, guest_id: g.id, identity_id: requireIdentityId(g), scan_job_id: scanJobId, score: risk.score, level: risk.level, factors: risk.factors })
   }
-  for (const batch of chunk(updates, 200)) {
-    await Promise.all(
-      batch.map((u) =>
-        supabase
-          .from('guest_identities')
-          .update({ risk_score: u.risk_score, risk_level: u.risk_level, risk_factors: u.risk_factors, recommended_action: u.recommended_action })
-          .eq('id', u.id as string),
-      ),
-    )
-  }
-  for (const batch of chunk(scoreRows, 500)) await supabase.from('risk_scores').insert(batch)
+  await persistGuestRiskUpdates(
+    (u) =>
+      supabase
+        .from('guest_identities')
+        .update({ risk_score: u.risk_score, risk_level: u.risk_level, risk_factors: u.risk_factors, recommended_action: u.recommended_action })
+        .eq('id', u.id),
+    updates.map((u) => ({
+      id: u.id as string,
+      risk_score: u.risk_score as number,
+      risk_level: u.risk_level as string,
+      risk_factors: u.risk_factors,
+      recommended_action: u.recommended_action as string,
+    })),
+  )
+  await persistRiskScores((rows) => supabase.from('risk_scores').insert(rows), scoreRows)
   return counts
 }
 
@@ -149,13 +160,14 @@ export async function snapshotMetrics(tenantId: string, scanJobId: string | null
     sensitive_with_guests: (resources.data ?? []).filter((r) => r.is_sensitive && (r.external_member_count ?? 0) > 0).length,
     memberships: memberships.count ?? 0,
   }
-  await supabase.from('scan_results').insert({ tenant_id: tenantId, scan_job_id: scanJobId, snapshot })
+  mustWrite('scan_results insert', await supabase.from('scan_results').insert({ tenant_id: tenantId, scan_job_id: scanJobId, snapshot }))
   return snapshot
 }
 
 export async function generateFindings(tenantId: string) {
   const supabase = db()
-  await supabase.from('risk_findings').update({ status: 'resolved', resolved_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('status', 'open')
+  const resolveOpen = () =>
+    supabase.from('risk_findings').update({ status: 'resolved', resolved_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('status', 'open')
   const { data: guests } = await supabase
     .from('guest_identities')
     .select('id,identity_id,display_name,email,risk_level,risk_factors,domain')
@@ -179,7 +191,7 @@ export async function generateFindings(tenantId: string) {
       },
     ]
   })
-  for (const batch of chunk(rows, 500)) await supabase.from('risk_findings').insert(batch)
+  await persistRiskFindings(resolveOpen, (batch) => supabase.from('risk_findings').insert(batch), rows)
   return rows.length
 }
 
@@ -192,7 +204,10 @@ export async function runScan(jobId: string, tenantId: string) {
     phases[phase] = state
     await setProgress(jobId, { phase, percent, message, phases })
   }
-  await supabase.from('scan_jobs').update({ status: 'running', started_at: new Date().toISOString() }).eq('id', jobId)
+  mustWrite(
+    'scan_jobs running',
+    await supabase.from('scan_jobs').update({ status: 'running', started_at: new Date().toISOString() }).eq('id', jobId),
+  )
   const now = new Date().toISOString()
   const summary: Record<string, number> = {}
 
@@ -209,10 +224,13 @@ export async function runScan(jobId: string, tenantId: string) {
       await progress('organization', 2, 'Reading tenant organization…')
       const org = await fetchOrganization(g)
       const verified = org.verifiedDomains.map((d) => d.name.toLowerCase())
-      await supabase
-        .from('tenants')
-        .update({ display_name: org.displayName, verified_domains: verified, primary_domain: org.verifiedDomains.find((d) => d.isDefault)?.name ?? verified[0] ?? null })
-        .eq('id', tenantId)
+      mustWrite(
+        'tenants organization',
+        await supabase
+          .from('tenants')
+          .update({ display_name: org.displayName, verified_domains: verified, primary_domain: org.verifiedDomains.find((d) => d.isDefault)?.name ?? verified[0] ?? null })
+          .eq('id', tenantId),
+      )
       await progress('organization', 5, `Organization ${org.displayName}`, 'done')
 
       await progress('guests', 8, 'Enumerating guest users…')
@@ -220,9 +238,12 @@ export async function runScan(jobId: string, tenantId: string) {
       summary.guests = graphGuests.length
 
       const domainNames = Array.from(new Set(graphGuests.map(domainOf).filter((d): d is string => Boolean(d))))
-      await supabase
-        .from('external_domains')
-        .upsert(domainNames.map((domain) => ({ tenant_id: tenantId, domain, last_seen_at: now })), { onConflict: 'tenant_id,domain', ignoreDuplicates: false })
+      mustWrite(
+        'external_domains upsert',
+        await supabase
+          .from('external_domains')
+          .upsert(domainNames.map((domain) => ({ tenant_id: tenantId, domain, last_seen_at: now })), { onConflict: 'tenant_id,domain', ignoreDuplicates: false }),
+      )
       const domainIdByName = new Map<string, string>()
       const orgByDomain = new Map<string, { id: string; relationship_type: RelationshipType }>()
       {
@@ -239,9 +260,15 @@ export async function runScan(jobId: string, tenantId: string) {
             first_seen_at: now,
             last_seen_at: now,
           }))
-          const { data: createdOrgs } = await supabase.from('external_organizations').insert(orgInserts).select('id,seed_domain_id')
+          const { data: createdOrgs } = mustWrite(
+            'external_organizations insert',
+            await supabase.from('external_organizations').insert(orgInserts).select('id,seed_domain_id'),
+          )
           for (const o of createdOrgs ?? []) {
-            await supabase.from('external_domains').update({ organization_id: o.id }).eq('id', o.seed_domain_id as string)
+            mustWrite(
+              'external_domains link organization',
+              await supabase.from('external_domains').update({ organization_id: o.id }).eq('id', o.seed_domain_id as string),
+            )
           }
         }
         const { data: linkedDomains } = await supabase
@@ -253,7 +280,12 @@ export async function runScan(jobId: string, tenantId: string) {
           const org = d.organization as unknown as { id: string; relationship_type: RelationshipType } | null
           if (org) orgByDomain.set(d.domain as string, org)
         }
-        if (domainNames.length) await supabase.from('external_organizations').update({ last_seen_at: now }).eq('tenant_id', tenantId).in('id', Array.from(new Set(Array.from(orgByDomain.values()).map((o) => o.id))))
+        if (domainNames.length) {
+          mustWrite(
+            'external_organizations last_seen',
+            await supabase.from('external_organizations').update({ last_seen_at: now }).eq('tenant_id', tenantId).in('id', Array.from(new Set(Array.from(orgByDomain.values()).map((o) => o.id)))),
+          )
+        }
       }
 
       const incoming: IncomingExternalGuest[] = graphGuests.map((u) => {
@@ -336,7 +368,9 @@ export async function runScan(jobId: string, tenantId: string) {
           removed_at: null,
         }
       })
-      for (const batch of chunk(resourceRows, 500)) await supabase.from('resources').upsert(batch, { onConflict: 'tenant_id,ms_object_id,resource_type' })
+      for (const batch of chunk(resourceRows, 500)) {
+        mustWrite('resources upsert', await supabase.from('resources').upsert(batch, { onConflict: 'tenant_id,ms_object_id,resource_type' }))
+      }
       await progress('groups', 48, `${groups.length} groups inventoried`, 'done')
 
       await progress('memberships', 50, 'Resolving guest memberships…')
@@ -381,7 +415,10 @@ export async function runScan(jobId: string, tenantId: string) {
         await progress('memberships', Math.min(68, 50 + Math.floor((processed / Math.max(1, groups.length)) * 18)), `${processed}/${groups.length} groups resolved…`)
       }
       for (const [rid, c] of counts) {
-        await supabase.from('resources').update({ internal_member_count: c.internal, external_member_count: c.external, owners: c.owners }).eq('id', rid)
+        mustWrite(
+          'resources member counts',
+          await supabase.from('resources').update({ internal_member_count: c.internal, external_member_count: c.external, owners: c.owners }).eq('id', rid),
+        )
       }
       await progress('memberships', 70, `${membershipRows.length} guest memberships`, 'done')
 
@@ -394,7 +431,9 @@ export async function runScan(jobId: string, tenantId: string) {
             if (!site) return
             const parentId = resourceIdByMs.get(`${groupType(grp)}:${grp.id}`)
             const sens = detectSensitivity(site.displayName ?? site.name ?? grp.displayName, site.description)
-            const { data: siteRow } = await supabase
+            const { data: siteRow } = mustWrite(
+              'resources sharepoint upsert',
+              await supabase
               .from('resources')
               .upsert(
                 {
@@ -415,7 +454,8 @@ export async function runScan(jobId: string, tenantId: string) {
                 { onConflict: 'tenant_id,ms_object_id,resource_type' },
               )
               .select('id')
-              .single()
+              .single(),
+            )
             if (siteRow && parentId) {
               for (const m of membershipRows.filter((r) => r.resource_id === parentId)) {
                 membershipRows.push({ ...m, resource_id: siteRow.id })
@@ -437,7 +477,9 @@ export async function runScan(jobId: string, tenantId: string) {
               const guestAssignments = assignments.filter((a) => a.principalType === 'User' && guestIdByMs.has(a.principalId))
               if (guestAssignments.length === 0) return
               const sens = detectSensitivity(app.displayName)
-              const { data: appRow } = await supabase
+              const { data: appRow } = mustWrite(
+                'resources app upsert',
+                await supabase
                 .from('resources')
                 .upsert(
                   {
@@ -457,7 +499,8 @@ export async function runScan(jobId: string, tenantId: string) {
                   { onConflict: 'tenant_id,ms_object_id,resource_type' },
                 )
                 .select('id')
-                .single()
+                .single(),
+              )
               if (!appRow) return
               for (const a of guestAssignments) {
                 membershipRows.push(
@@ -480,9 +523,13 @@ export async function runScan(jobId: string, tenantId: string) {
       const priorKeys = new Set((priorMemberships ?? []).map((m) => `${m.guest_id}:${m.resource_id}`))
       const incomingKeys = new Set(membershipRows.map((m) => `${m.guest_id}:${m.resource_id}`))
       const dedup = Array.from(new Map(membershipRows.map((m) => [`${m.guest_id}:${m.resource_id}`, m])).values())
-      for (const batch of chunk(dedup, 500)) await supabase.from('resource_memberships').upsert(batch, { onConflict: 'tenant_id,guest_id,resource_id' })
-      const removedMembershipIds = (priorMemberships ?? []).filter((m) => !incomingKeys.has(`${m.guest_id}:${m.resource_id}`)).map((m) => m.id)
-      if (removedMembershipIds.length) await supabase.from('resource_memberships').update({ removed_at: now }).in('id', removedMembershipIds)
+      const removedMembershipIds = (priorMemberships ?? []).filter((m) => !incomingKeys.has(`${m.guest_id}:${m.resource_id}`)).map((m) => m.id as string)
+      await persistMembershipUpserts(
+        (batch) => supabase.from('resource_memberships').upsert(batch, { onConflict: 'tenant_id,guest_id,resource_id' }),
+        (ids) => supabase.from('resource_memberships').update({ removed_at: now }).in('id', ids),
+        dedup,
+        removedMembershipIds,
+      )
       summary.new_memberships = dedup.filter((m) => !priorKeys.has(`${m.guest_id}:${m.resource_id}`)).length
       summary.removed_memberships = removedMembershipIds.length
       summary.memberships = dedup.length
@@ -507,12 +554,25 @@ export async function runScan(jobId: string, tenantId: string) {
       console.log('[v0] alert rule evaluation failed:', err instanceof Error ? err.message : err)
     }
 
-    await supabase.from('scan_jobs').update({ status: 'completed', completed_at: new Date().toISOString(), summary }).eq('id', jobId)
-    await supabase.from('tenants').update({ last_scan_at: new Date().toISOString(), connection_status: 'connected' }).eq('id', tenantId)
+    mustWrite(
+      'scan_jobs completed',
+      await supabase.from('scan_jobs').update({ status: 'completed', completed_at: new Date().toISOString(), summary }).eq('id', jobId),
+    )
+    mustWrite(
+      'tenants last_scan_at',
+      await supabase.from('tenants').update({ last_scan_at: new Date().toISOString(), connection_status: 'connected' }).eq('id', tenantId),
+    )
     await audit({ tenantId, userId: '', email: 'system' } as never, { action: 'scan.completed', targetType: 'scan_job', targetId: jobId, newState: summary })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Scan failed'
-    await supabase.from('scan_jobs').update({ status: 'failed', completed_at: new Date().toISOString(), error: message, progress: { ...(await currentProgress(jobId)), phases } }).eq('id', jobId)
+    try {
+      mustWrite(
+        'scan_jobs failed',
+        await supabase.from('scan_jobs').update({ status: 'failed', completed_at: new Date().toISOString(), error: message, progress: { ...(await currentProgress(jobId)), phases } }).eq('id', jobId),
+      )
+    } catch (statusErr) {
+      console.log('[v0] scan_jobs failed status write:', statusErr instanceof Error ? statusErr.message : statusErr)
+    }
     await audit({ tenantId, userId: '', email: 'system' } as never, { action: 'scan.failed', targetType: 'scan_job', targetId: jobId, reason: message })
     try {
       await evaluateAlertRules(tenantId, { scanJobId: jobId, scanStartedAt: now, scanFailed: message })

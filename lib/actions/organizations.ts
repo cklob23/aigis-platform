@@ -7,6 +7,7 @@ import { audit } from '@/lib/audit'
 import { rescoreTenant } from '@/lib/scan/engine'
 import { classifyExternalIdentity } from '@/lib/identity/classify'
 import type { ApprovalState, DomainClassification, ExternalOrganization, Guest, RelationshipType } from '@/lib/types'
+import { mustWrite } from '@/lib/supabase/write'
 
 type ActionResult = { ok: true; message?: string } | { ok: false; error: string }
 
@@ -55,7 +56,10 @@ async function reclassifyOrganization(tenantId: string, org: Pick<ExternalOrgani
       tenantVerifiedDomains: verifiedDomains,
       organizationRelationship: org.relationship_type,
     })
-    await supabase.from('guest_identities').update({ external_type: result.external_type, classification_evidence: result.evidence }).eq('id', g.id)
+    mustWrite(
+      'guest_identities reclassify',
+      await supabase.from('guest_identities').update({ external_type: result.external_type, classification_evidence: result.evidence }).eq('id', g.id),
+    )
   }
 }
 
@@ -79,28 +83,34 @@ export async function updateOrganization(input: {
     const name = input.name.trim()
     if (!name) return { ok: false, error: 'Name is required' }
 
-    await supabase
-      .from('external_organizations')
-      .update({
-        name,
-        relationship_type: input.relationshipType,
-        approval_state: input.approvalState,
-        business_owner: input.businessOwner?.trim() || null,
-        business_owner_email: input.businessOwnerEmail?.trim() || null,
-        review_date: input.reviewDate || null,
-        notes: input.notes?.trim() || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('tenant_id', tenant.id)
-      .eq('id', input.organizationId)
+    mustWrite(
+      'external_organizations update',
+      await supabase
+        .from('external_organizations')
+        .update({
+          name,
+          relationship_type: input.relationshipType,
+          approval_state: input.approvalState,
+          business_owner: input.businessOwner?.trim() || null,
+          business_owner_email: input.businessOwnerEmail?.trim() || null,
+          review_date: input.reviewDate || null,
+          notes: input.notes?.trim() || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('tenant_id', tenant.id)
+        .eq('id', input.organizationId),
+    )
 
     const relationshipChanged = prev.relationship_type !== input.relationshipType
     if (relationshipChanged || prev.business_owner !== (input.businessOwner?.trim() || null) || prev.review_date !== (input.reviewDate || null)) {
-      await supabase
-        .from('external_domains')
-        .update({ classification: RELATIONSHIP_TO_DOMAIN_CLASS[input.relationshipType], business_owner: input.businessOwner?.trim() || null, review_date: input.reviewDate || null })
-        .eq('tenant_id', tenant.id)
-        .eq('organization_id', input.organizationId)
+      mustWrite(
+        'external_domains mirror relationship',
+        await supabase
+          .from('external_domains')
+          .update({ classification: RELATIONSHIP_TO_DOMAIN_CLASS[input.relationshipType], business_owner: input.businessOwner?.trim() || null, review_date: input.reviewDate || null })
+          .eq('tenant_id', tenant.id)
+          .eq('organization_id', input.organizationId),
+      )
     }
 
     await audit(session, {
@@ -157,13 +167,21 @@ export async function bulkUpdateOrganizations(input: {
     if (ownerEmail) patch.business_owner_email = ownerEmail
     if (input.reviewDate) patch.review_date = input.reviewDate
     const orgIds = rows.map((r) => r.id as string)
-    await supabase.from('external_organizations').update(patch).eq('tenant_id', tenant.id).in('id', orgIds)
+    mustWrite(
+      'external_organizations bulk update',
+      await supabase.from('external_organizations').update(patch).eq('tenant_id', tenant.id).in('id', orgIds),
+    )
 
     const domainPatch: Record<string, unknown> = {}
     if (input.relationshipType) domainPatch.classification = RELATIONSHIP_TO_DOMAIN_CLASS[input.relationshipType]
     if (owner) domainPatch.business_owner = owner
     if (input.reviewDate) domainPatch.review_date = input.reviewDate
-    if (Object.keys(domainPatch).length) await supabase.from('external_domains').update(domainPatch).eq('tenant_id', tenant.id).in('organization_id', orgIds)
+    if (Object.keys(domainPatch).length) {
+      mustWrite(
+        'external_domains bulk mirror',
+        await supabase.from('external_domains').update(domainPatch).eq('tenant_id', tenant.id).in('organization_id', orgIds),
+      )
+    }
 
     const correlationId = `bulk-${Date.now().toString(36)}`
     for (const prev of rows as ExternalOrganization[]) {
@@ -223,8 +241,14 @@ export async function assignDomainToOrganization(input: { domainId: string; orga
     const { data: target } = await supabase.from('external_organizations').select('id,name,relationship_type').eq('tenant_id', tenant.id).eq('id', targetId).single()
     if (!target) return { ok: false, error: 'Organization not found' }
 
-    await supabase.from('external_domains').update({ organization_id: targetId }).eq('tenant_id', tenant.id).eq('id', input.domainId)
-    await supabase.from('guest_identities').update({ external_organization_id: targetId }).eq('tenant_id', tenant.id).eq('external_domain_id', input.domainId)
+    mustWrite(
+      'external_domains assign organization',
+      await supabase.from('external_domains').update({ organization_id: targetId }).eq('tenant_id', tenant.id).eq('id', input.domainId),
+    )
+    mustWrite(
+      'guest_identities assign organization',
+      await supabase.from('guest_identities').update({ external_organization_id: targetId }).eq('tenant_id', tenant.id).eq('external_domain_id', input.domainId),
+    )
 
     await audit(session, {
       action: 'domain.reassigned',

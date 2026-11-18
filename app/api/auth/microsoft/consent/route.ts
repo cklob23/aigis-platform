@@ -4,6 +4,7 @@ import { readSession } from '@/lib/auth/session'
 import { randomToken } from '@/lib/auth/crypto'
 import { db } from '@/lib/supabase/admin'
 import { audit } from '@/lib/audit'
+import { mustWrite } from '@/lib/supabase/write'
 
 /** Only same-origin app paths may be used as a post-consent destination. */
 function safeReturnPath(value: string | null) {
@@ -36,10 +37,13 @@ export async function GET(req: NextRequest) {
       // Drop the cached app-only token so newly consented permissions show up immediately
       // instead of after the old token's expiry (~1 hour).
       invalidateAppToken(session.msTenantId)
-      await db()
-        .from('tenants')
-        .update({ connection_status: 'connected', consent_granted_at: new Date().toISOString(), ...(returnTo ? {} : { onboarding_step: 3 }) })
-        .eq('id', session.tenantId)
+      mustWrite(
+        'tenants consent',
+        await db()
+          .from('tenants')
+          .update({ connection_status: 'connected', consent_granted_at: new Date().toISOString(), ...(returnTo ? {} : { onboarding_step: 3 }) })
+          .eq('id', session.tenantId),
+      )
       await audit(session, { action: 'tenant.consent_granted', targetType: 'tenant', targetId: session.tenantId })
     }
     return res
