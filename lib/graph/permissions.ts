@@ -37,10 +37,10 @@ export const GRAPH_APPLICATION_READ_PERMISSION_DETAILS: Record<
 
 /** Short onboarding copy. Names stay in monospace next to these phrases. */
 export const GRAPH_PERMISSION_PLAIN_PURPOSE: Record<GraphApplicationReadPermission, string> = {
-  'User.Read.All': 'see guest users and their profiles',
+  'User.Read.All': 'see external identities and their profiles',
   'Group.Read.All': 'see groups, Teams, and memberships',
   'Sites.Read.All': 'see SharePoint sites tied to groups',
-  'Application.Read.All': 'see enterprise apps guests can access',
+  'Application.Read.All': 'see enterprise apps external users can access',
   'AuditLog.Read.All': 'see last sign-in times',
   'Organization.Read.All': 'see the tenant name and domains',
   'RoleManagement.Read.Directory': 'see who holds admin roles',
