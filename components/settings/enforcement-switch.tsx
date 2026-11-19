@@ -18,7 +18,15 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { updateEnforcementMode } from '@/lib/actions/settings'
 
-export function EnforcementSwitch({ initial, disabled }: { initial: 'monitor' | 'enforce'; disabled: boolean }) {
+export function EnforcementSwitch({
+  initial,
+  disabled,
+  lockedMessage,
+}: {
+  initial: 'monitor' | 'enforce'
+  disabled: boolean
+  lockedMessage?: string
+}) {
   const [mode, setMode] = useState(initial)
   const [confirming, setConfirming] = useState(false)
   const [pending, startTransition] = useTransition()
@@ -42,9 +50,11 @@ export function EnforcementSwitch({ initial, disabled }: { initial: 'monitor' | 
           <div className="flex flex-col">
             <Label htmlFor="enforce">Enforcement</Label>
             <span className="text-muted-foreground text-xs">
-              {mode === 'enforce'
-                ? 'Approved remediations remove access, disable, or delete guests in Entra ID.'
-                : 'Monitor-only. Scans read your tenant; remediations are queued but nothing is changed in Entra.'}
+              {lockedMessage
+                ? lockedMessage
+                : mode === 'enforce'
+                  ? 'Demo: approved remediations update the local inventory only. Nothing is sent to Microsoft Graph.'
+                  : 'Monitor-only. Scans read your tenant; remediations are queued but nothing is changed in Entra.'}
             </span>
           </div>
         </div>

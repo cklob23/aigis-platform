@@ -90,10 +90,10 @@ export function RemediationDialog({
   const reasonOk = reason.trim().length >= 4
   const disabled = pending || !reasonOk || (type === 'remove_from_resources' && resourceIds.size === 0) || (needsConfirm && confirm !== confirmTarget)
   const executionCopy = monitorOnly
-    ? 'This tenant is monitor-only. Continuing records a remediation request in the queue; nothing is changed in Entra until enforcement is enabled in Settings.'
+    ? 'AIGIS does not change Entra. Continuing records a remediation request. Make the change in Microsoft 365 and confirm it on the next scan.'
     : canExecute
-      ? 'Enforcement is on. Changes are applied to Microsoft 365 when you confirm on the next step and are recorded in the audit log.'
-      : 'Your role can request remediation; an administrator must approve before anything changes.'
+      ? 'Demo tenant: the next step simulates inventory updates locally. Nothing is sent to Microsoft Graph.'
+      : 'Your role can request remediation; an administrator must approve before anything is recorded as executed.'
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -111,7 +111,7 @@ export function RemediationDialog({
             <div className="flex flex-col gap-4">
               <Alert>
                 <ShieldOff />
-                <AlertTitle>{monitorOnly ? 'Monitor-only tenant: nothing is removed yet' : isDemo ? 'Demo tenant: changes are simulated' : 'Review before you continue'}</AlertTitle>
+                <AlertTitle>{monitorOnly ? 'Record only: nothing is removed in Entra' : isDemo ? 'Demo tenant: changes are simulated' : 'Review before you continue'}</AlertTitle>
                 <AlertDescription>{executionCopy}</AlertDescription>
               </Alert>
 

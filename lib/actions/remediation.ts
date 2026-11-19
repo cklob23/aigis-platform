@@ -6,14 +6,13 @@ import { can } from '@/lib/auth/rbac'
 import { db } from '@/lib/supabase/admin'
 import { audit } from '@/lib/audit'
 import { randomToken } from '@/lib/auth/crypto'
-import { GraphClient } from '@/lib/graph/client'
-import { deleteUser, removeGroupMember, removeGroupOwner, revokeSessions, setAccountEnabled } from '@/lib/graph/queries'
 import { rescoreTenant } from '@/lib/scan/engine'
 import { requireIdentityId } from '@/lib/identity/governance'
 import { mustWrite, type WriteTask } from '@/lib/supabase/write'
 import { persistRemediationEffects, requireRemediationAction } from '@/lib/remediation/persist'
+import { canExecuteEntraWrites, LIVE_ENTRA_WRITES_DISABLED, type RemediationType } from '@/lib/remediation/entra-writes'
 
-export type RemediationType = 'remove_from_resources' | 'disable_guest' | 'remove_all_access' | 'delete_guest'
+export type { RemediationType }
 
 type Result = { ok: true; message: string; status: string } | { ok: false; error: string }
 
@@ -38,10 +37,9 @@ export async function remediateGuest(input: { guestId: string; actionType: Remed
       .map((m) => ({ membershipId: m.id as string, ...(m.resource as unknown as { id: string; ms_object_id: string; display_name: string; resource_type: string }) }))
       .filter((t) => (input.actionType === 'remove_from_resources' ? input.resourceIds?.includes(t.id) : true))
     const correlationId = randomToken(8)
-    // Real tenants start in monitor-only mode: nothing is written to Entra until an
-    // administrator explicitly enables enforcement in Settings. Demo tenants simulate.
-    const enforcementOn = tenant.is_demo || tenant.settings.enforcement_mode === 'enforce'
-    const canExecute = enforcementOn && can(session.role, 'remediation.execute')
+    // Live tenants never call Graph writes: consent requests read scopes only.
+    // Demo tenants still simulate local inventory updates.
+    const canExecute = canExecuteEntraWrites(tenant) && can(session.role, 'remediation.execute')
 
     const identityId = requireIdentityId(guest)
     const action = requireRemediationAction(
@@ -77,36 +75,19 @@ export async function remediateGuest(input: { guestId: string; actionType: Remed
       return {
         ok: true,
         status: 'pending',
-        message: enforcementOn
+        message: canExecuteEntraWrites(tenant)
           ? 'Remediation request submitted for administrator approval.'
-          : 'Recorded in the remediation queue. Enforcement is off (monitor-only), so nothing was changed in Entra.',
+          : 'Recorded in the remediation queue. Nothing was changed in Entra. Make the change in Microsoft 365 and confirm it on the next scan.',
       }
     }
 
     const now = new Date().toISOString()
     const result: Record<string, unknown> = { removed: [] as string[], errors: [] as string[] }
-    if (!tenant.is_demo) {
-      const g = new GraphClient(tenant.ms_tenant_id)
-      for (const t of targets) {
-        try {
-          if (t.resource_type === 'sharepoint_site' || t.resource_type === 'enterprise_app') continue
-          const ownerRow = (memberships ?? []).find((m) => m.id === t.membershipId) as { membership_type?: string } | undefined
-          if (ownerRow?.membership_type === 'owner') await removeGroupOwner(g, t.ms_object_id, guest.ms_object_id).catch(() => undefined)
-          await removeGroupMember(g, t.ms_object_id, guest.ms_object_id)
-          ;(result.removed as string[]).push(t.display_name)
-        } catch (err) {
-          ;(result.errors as string[]).push(`${t.display_name}: ${err instanceof Error ? err.message : 'failed'}`)
-        }
-      }
-      if (input.actionType === 'disable_guest' || input.actionType === 'remove_all_access') {
-        await setAccountEnabled(g, guest.ms_object_id, false)
-        await revokeSessions(g, guest.ms_object_id).catch(() => undefined)
-      }
-      if (input.actionType === 'delete_guest') await deleteUser(g, guest.ms_object_id)
-    } else {
-      result.removed = targets.map((t) => t.display_name)
-      result.simulated = true
+    if (!canExecuteEntraWrites(tenant)) {
+      throw new Error(LIVE_ENTRA_WRITES_DISABLED)
     }
+    result.removed = targets.map((t) => t.display_name)
+    result.simulated = true
 
     const guestUpdate: Record<string, unknown> = {}
     if (input.actionType === 'disable_guest' || input.actionType === 'remove_all_access') guestUpdate.account_enabled = false
@@ -184,8 +165,8 @@ export async function approvePendingRemediation(actionId: string): Promise<Resul
     assertCan(session, 'remediation.execute')
     const { data: action } = await db().from('remediation_actions').select('*').eq('tenant_id', tenant.id).eq('id', actionId).single()
     if (!action || action.status !== 'pending') return { ok: false, error: 'Request is no longer pending' }
-    if (!tenant.is_demo && tenant.settings.enforcement_mode !== 'enforce') {
-      return { ok: false, error: 'Enforcement is off. Enable it in Settings → General before approving changes to Entra.' }
+    if (!canExecuteEntraWrites(tenant)) {
+      return { ok: false, error: LIVE_ENTRA_WRITES_DISABLED }
     }
     mustWrite(
       'remediation_actions cancel',

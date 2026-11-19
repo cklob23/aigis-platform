@@ -11,6 +11,7 @@ import { createSession } from '@/lib/auth/session'
 import type { RoleKey } from '@/lib/auth/rbac'
 import { mergeAiSettings, parseAiSettings } from '@/lib/ai/recommend'
 import { mustWrite } from '@/lib/supabase/write'
+import { canExecuteEntraWrites, LIVE_ENTRA_WRITES_DISABLED } from '@/lib/remediation/entra-writes'
 
 type Result = { ok: true; message?: string } | { ok: false; error: string }
 const fail = (err: unknown): Result => ({ ok: false, error: err instanceof Error ? err.message : 'Something went wrong' })
@@ -38,6 +39,9 @@ export async function updateEnforcementMode(mode: 'monitor' | 'enforce'): Promis
   try {
     const { session, tenant } = await requireContext()
     assertCan(session, 'settings.manage')
+    if (mode === 'enforce' && !canExecuteEntraWrites(tenant)) {
+      return { ok: false, error: LIVE_ENTRA_WRITES_DISABLED }
+    }
     const prev = tenant.settings.enforcement_mode ?? 'monitor'
     mustWrite(
       'tenants enforcement_mode',

@@ -67,10 +67,20 @@ export default async function GeneralSettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Enforcement mode</CardTitle>
-          <CardDescription>Controls whether AIGIS is allowed to make changes in your Entra ID tenant. New tenants start in monitor-only mode.</CardDescription>
+          <CardDescription>
+            Live tenants stay monitor-only. AIGIS does not request Graph write permissions. Remediation is record, then confirm on the next scan.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <EnforcementSwitch disabled={!canManage || tenant.is_demo} initial={tenant.settings.enforcement_mode === 'enforce' ? 'enforce' : 'monitor'} />
+          <EnforcementSwitch
+            disabled
+            initial={tenant.is_demo ? 'enforce' : 'monitor'}
+            lockedMessage={
+              tenant.is_demo
+                ? 'Demo tenants simulate inventory updates locally. Graph write permissions are not requested.'
+                : 'Live tenants cannot enable Entra writes. Record the request, make the change in Microsoft 365, and confirm it on the next scan.'
+            }
+          />
         </CardContent>
       </Card>
 

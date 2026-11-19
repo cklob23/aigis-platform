@@ -18,7 +18,6 @@ const SCOPES = [
   { scope: 'Application.Read.All', purpose: 'Enterprise app assignments held by guests', type: 'Application' },
   { scope: 'AuditLog.Read.All', purpose: 'Last interactive / non-interactive sign-in timestamps', type: 'Application' },
   { scope: 'Organization.Read.All', purpose: 'Verified domains and tenant name', type: 'Application' },
-  { scope: 'User.ReadWrite.All · GroupMember.ReadWrite.All', purpose: 'Only when remediation is enabled: remove memberships, disable guests', type: 'Application (optional)' },
 ]
 
 export default async function ScansPage() {

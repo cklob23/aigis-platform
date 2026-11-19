@@ -18,6 +18,7 @@ import { formatDate, relativeDays, daysBetween, titleCase } from '@/lib/format'
 import { RESOURCE_TYPE_LABELS } from '@/lib/types'
 import { describeRecommendation } from '@/lib/risk/recommendation'
 import { describeOwner, ownerKindLabel } from '@/lib/identity/owner'
+import { canExecuteEntraWrites } from '@/lib/remediation/entra-writes'
 import { parseAiSettings } from '@/lib/ai/recommend'
 import { ExplainRecommendation } from '@/components/guests/explain-recommendation'
 import { cn } from '@/lib/utils'
@@ -129,9 +130,9 @@ export default async function GuestDetailPage({ params }: { params: Promise<{ id
             <RemediationDialog
               guest={g}
               memberships={memberships}
-              canExecute={can(session.role, 'remediation.execute')}
+              canExecute={canExecuteEntraWrites(tenant) && can(session.role, 'remediation.execute')}
               isDemo={tenant.is_demo}
-              monitorOnly={!tenant.is_demo && tenant.settings.enforcement_mode !== 'enforce'}
+              monitorOnly={!canExecuteEntraWrites(tenant)}
               trigger={
                 <Button variant={g.risk_level === 'critical' ? 'destructive' : 'default'}>
                   <Wrench data-icon="inline-start" /> Remediate
