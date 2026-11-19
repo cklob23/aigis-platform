@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { ScanButton } from '@/components/scans/scan-button'
 import { completeOnboarding, setOnboardingStep } from '@/lib/actions/settings'
 import { cn } from '@/lib/utils'
+import { GRAPH_APPLICATION_READ_PERMISSIONS } from '@/lib/graph/permissions'
 
 export const metadata = { title: 'Connect your tenant' }
 
@@ -98,7 +99,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
               </Alert>
             )}
             <div className="grid gap-1 rounded-md border bg-muted/30 p-3 font-mono text-xs">
-              {['User.Read.All', 'Group.Read.All', 'Sites.Read.All', 'Application.Read.All', 'AuditLog.Read.All', 'Organization.Read.All'].map((s) => (
+              {GRAPH_APPLICATION_READ_PERMISSIONS.map((s) => (
                 <span key={s}>{s}</span>
               ))}
             </div>
