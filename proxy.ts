@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { jwtVerify } from 'jose'
 
-const PUBLIC_PREFIXES = ['/auth', '/api/auth', '/_next', '/favicon', '/icon', '/apple-icon', '/images']
+const PUBLIC_PREFIXES = ['/auth', '/api/auth', '/api/cron', '/_next', '/favicon', '/icon', '/apple-icon', '/images']
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl

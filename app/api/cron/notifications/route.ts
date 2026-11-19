@@ -2,18 +2,20 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/supabase/admin'
 import { evaluateAlertRules } from '@/lib/alerts/evaluate'
 import { sendDueReminders } from '@/lib/reviews/workflow'
+import { authorizeCron } from '@/lib/cron/auth'
 
 export const maxDuration = 300
 
 /**
  * Daily notification sweep for every connected tenant: time-based alert
  * rules (inactive identities, overdue reviews) and review reminders.
- * Vercel Cron sends `Authorization: Bearer ${CRON_SECRET}`.
+ * Render (and Vercel Cron) send `Authorization: Bearer ${CRON_SECRET}`.
+ * Fail closed when the secret is unset.
  */
 export async function GET(req: Request) {
-  const secret = process.env.CRON_SECRET
-  if (secret && req.headers.get('authorization') !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const auth = authorizeCron(process.env.CRON_SECRET, req.headers.get('authorization'))
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status })
   }
 
   const { data: tenants } = await db().from('tenants').select('id,display_name').not('onboarding_completed_at', 'is', null)

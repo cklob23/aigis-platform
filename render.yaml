@@ -1,0 +1,17 @@
+# Cron job that hits the live AIGIS web service.
+# The web service (srv-dbuhh2hsrm7s73et2mn0, https://aigis-platform.onrender.com)
+# already exists. Do not apply this Blueprint if that would recreate or replace
+# the web service. Creating this cron job in the Dashboard (see
+# docs/ops/render-notifications-cron.md) is enough.
+services:
+  - type: cron
+    name: aigis-notifications
+    runtime: node
+    schedule: '0 7 * * *'
+    buildCommand: 'true'
+    startCommand: bash scripts/run-notifications-cron.sh
+    envVars:
+      - key: CRON_SECRET
+        sync: false
+      - key: AIGIS_CRON_URL
+        value: https://aigis-platform.onrender.com/api/cron/notifications
