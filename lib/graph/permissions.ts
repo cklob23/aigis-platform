@@ -1,15 +1,11 @@
 /** Application read permissions declared for admin consent (.default). Never includes ReadWrite. */
-export const GRAPH_APPLICATION_READ_PERMISSIONS = [
+export const CORE_GRAPH_READ_PERMISSIONS = [
   'User.Read.All',
   'Group.Read.All',
   'Sites.Read.All',
   'Application.Read.All',
   'AuditLog.Read.All',
   'Organization.Read.All',
-  'RoleManagement.Read.Directory',
-  'PrivilegedEligibilitySchedule.Read.AzureADGroup',
-  'PrivilegedAssignmentSchedule.Read.AzureADGroup',
-  'UserAuthenticationMethod.Read.All',
 ] as const
 
 export const PRIVILEGED_READ_PERMISSIONS = [
@@ -18,6 +14,8 @@ export const PRIVILEGED_READ_PERMISSIONS = [
   'PrivilegedAssignmentSchedule.Read.AzureADGroup',
   'UserAuthenticationMethod.Read.All',
 ] as const
+
+export const GRAPH_APPLICATION_READ_PERMISSIONS = [...CORE_GRAPH_READ_PERMISSIONS, ...PRIVILEGED_READ_PERMISSIONS] as const
 
 export type GraphApplicationReadPermission = (typeof GRAPH_APPLICATION_READ_PERMISSIONS)[number]
 
@@ -35,4 +33,18 @@ export const GRAPH_APPLICATION_READ_PERMISSION_DETAILS: Record<
   'PrivilegedEligibilitySchedule.Read.AzureADGroup': { purpose: 'Group PIM eligibility schedules (read)', type: 'Application' },
   'PrivilegedAssignmentSchedule.Read.AzureADGroup': { purpose: 'Group PIM assignment schedules (read)', type: 'Application' },
   'UserAuthenticationMethod.Read.All': { purpose: 'Authentication methods registered on users (read)', type: 'Application' },
+}
+
+/** Short onboarding copy. Names stay in monospace next to these phrases. */
+export const GRAPH_PERMISSION_PLAIN_PURPOSE: Record<GraphApplicationReadPermission, string> = {
+  'User.Read.All': 'see guest users and their profiles',
+  'Group.Read.All': 'see groups, Teams, and memberships',
+  'Sites.Read.All': 'see SharePoint sites tied to groups',
+  'Application.Read.All': 'see enterprise apps guests can access',
+  'AuditLog.Read.All': 'see last sign-in times',
+  'Organization.Read.All': 'see the tenant name and domains',
+  'RoleManagement.Read.Directory': 'see who holds admin roles',
+  'PrivilegedEligibilitySchedule.Read.AzureADGroup': 'see which groups use PIM eligibility',
+  'PrivilegedAssignmentSchedule.Read.AzureADGroup': 'see which groups have PIM assignments',
+  'UserAuthenticationMethod.Read.All': 'see how people sign in',
 }

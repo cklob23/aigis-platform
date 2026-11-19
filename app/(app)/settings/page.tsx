@@ -98,9 +98,7 @@ export default async function GeneralSettingsPage({ searchParams }: { searchPara
         <Card id="privileged">
           <CardHeader>
             <CardTitle>Privileged access</CardTitle>
-            <CardDescription>
-              Off by default. Probes are read-only GET calls. Enabling this flag does not change Dashboard or Guests.
-            </CardDescription>
+            <CardDescription>Read-only. Turning this on doesn&apos;t change Dashboard or External identities.</CardDescription>
           </CardHeader>
           <CardContent>
             <PrivilegedSettingsForm

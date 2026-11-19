@@ -3,6 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PRIVILEGED_SETTINGS } from '@/lib/types'
+import { formatCheckedAt } from '@/lib/format'
 import { GRAPH_APPLICATION_READ_PERMISSIONS, PRIVILEGED_READ_PERMISSIONS } from '@/lib/graph/permissions'
 import {
   detectPrivilegedCapability,
@@ -136,13 +137,26 @@ describe('privileged permission lists', () => {
   })
 
   it('lists the four privileged reads on onboarding and scans', () => {
-    const onboarding = readFileSync(path.join(root, 'app/onboarding/page.tsx'), 'utf8')
+    const onboarding = readFileSync(path.join(root, 'components/onboarding/permission-list.tsx'), 'utf8')
     const scans = readFileSync(path.join(root, 'app/(app)/scans/page.tsx'), 'utf8')
-    expect(onboarding).toContain('GRAPH_APPLICATION_READ_PERMISSIONS')
+    expect(onboarding).toContain('PRIVILEGED_READ_PERMISSIONS')
+    expect(onboarding).toContain('Used by the Privileged access module')
+    expect(onboarding).toContain('All permissions are read-only. AIGIS never changes your tenant.')
+    expect(onboarding).not.toContain('Mail.Send')
     expect(scans).toContain('GRAPH_APPLICATION_READ_PERMISSIONS')
     for (const name of PRIVILEGED_READ_PERMISSIONS) {
       expect(GRAPH_APPLICATION_READ_PERMISSIONS).toContain(name)
     }
+  })
+})
+
+describe('formatCheckedAt', () => {
+  it('shows a relative label and a local-zone hover title', () => {
+    const now = new Date('2026-11-19T12:02:00.000Z')
+    const out = formatCheckedAt('2026-11-19T12:00:00.000Z', now)
+    expect(out.label).toBe('2 min ago')
+    expect(out.title).toContain('Nov 19, 2026')
+    expect(out.title).not.toBe(out.label)
   })
 })
 
