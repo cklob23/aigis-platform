@@ -33,6 +33,7 @@ pnpm exec vitest run lib/identity/governance-fks.test.ts
 pnpm exec vitest run lib/identity/owner-schema.test.ts
 pnpm exec vitest run lib/ai/explain-schema.test.ts
 pnpm exec vitest run lib/identity/identity-first-schema.test.ts
+pnpm exec vitest run lib/identity/provision-governance-ids.test.ts
 ```
 
 ## Database names
@@ -46,10 +47,11 @@ Each suite uses its own database and drops it in `afterAll`. Override the name i
 | 0006 owner identity | `aigis_pr4_test` | `AIGIS_PR4_TEST_DB` |
 | 0007 explanations | `aigis_pr7_test` | `AIGIS_PR7_TEST_DB` |
 | 0008 identity-first | `aigis_pr8_test` | `AIGIS_PR8_TEST_DB` |
+| 0008a governance trigger | `aigis_0008a_test` | `AIGIS_0008A_TEST_DB` |
 
 ## Owner precheck / migration / postcheck (not QA CI)
 
-Production apply is still owner-run. The Vitest suite replays the same files against a schema built from `0001` through `0007`, then `0008_precheck.sql`, `0008_identity_first_governance.sql`, `0008_postcheck.sql`, and `0008_rollback.sql`. Do not point these scripts at prod from this environment.
+Production apply is still owner-run. The Vitest suite replays the same files against a schema built from `0001` through `0008`, then `0008a_precheck.sql`, `0008a_fix_provision_governance_ids.sql`, `0008a_postcheck.sql`, and `0008a_rollback.sql`. Do not point these scripts at prod from this environment.
 
 ## If a suite fails to start
 
