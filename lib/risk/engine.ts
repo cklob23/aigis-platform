@@ -1,4 +1,5 @@
 import type { DomainClassification, IdentityClass, RecommendedAction, RiskFactor, RiskLevel } from '@/lib/types'
+import { authMethodsStatus } from '@/lib/risk/auth-methods'
 
 export type RiskInput = {
   accountEnabled: boolean
@@ -7,6 +8,8 @@ export type RiskInput = {
   lastSignInAt: string | null
   lastNonInteractiveSignInAt?: string | null
   authMethods: string[]
+  /** True only after a successful authentication-methods fetch. Empty + unknown is not "no MFA". */
+  authMethodsKnown?: boolean
   hasSponsor: boolean
   sponsorEnabled: boolean | null
   domainClassification: DomainClassification
@@ -134,7 +137,11 @@ function scoreExternal(input: RiskInput, policy: RiskPolicyConfig, now: number):
     if ((ageDays ?? 0) > policy.reviewDays) add('never_reviewed', 'Never reviewed (account older than policy)', 10)
   } else if (reviewAge > policy.reviewDays) add('review_overdue', `Last review ${reviewAge} days ago`, 8)
 
-  if (input.authMethods.length === 0 && lastActivity) add('no_mfa', 'No registered authentication methods', 6)
+  if (lastActivity) {
+    const mfa = authMethodsStatus(input.authMethods, input.authMethodsKnown)
+    if (mfa === 'none') add('no_mfa', 'No registered authentication methods', 6)
+    else if (mfa === 'unknown') add('mfa_unknown', 'MFA status unknown', 0, 'Authentication methods were not inventoried')
+  }
 
   const raw = factors.reduce((sum, f) => sum + f.points, 0)
   const score = Math.min(100, raw)

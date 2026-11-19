@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatDate, relativeDays, daysBetween, titleCase } from '@/lib/format'
 import { RESOURCE_TYPE_LABELS } from '@/lib/types'
 import { describeRecommendation } from '@/lib/risk/recommendation'
+import { describeAuthMethods } from '@/lib/risk/auth-methods'
 import { describeOwner, ownerKindLabel } from '@/lib/identity/owner'
 import { parseAiSettings } from '@/lib/ai/recommend'
 import { ExplainRecommendation } from '@/components/guests/explain-recommendation'
@@ -45,6 +46,7 @@ export default async function GuestDetailPage({ params }: { params: Promise<{ id
   const evidence = Array.isArray(g.classification_evidence) ? g.classification_evidence : []
   const canRemediate = can(session.role, 'remediation.request') && !g.removed_at
 
+  const authMethods = describeAuthMethods(g.auth_methods)
   const facts: { label: string; value: React.ReactNode }[] = [
     { label: 'Email', value: <span className="font-mono">{g.email ?? '—'}</span> },
     { label: 'UPN', value: <span className="truncate font-mono text-xs">{g.upn ?? '—'}</span> },
@@ -54,7 +56,18 @@ export default async function GuestDetailPage({ params }: { params: Promise<{ id
     { label: 'Created', value: `${formatDate(g.created_at_ms)} (${daysBetween(g.created_at_ms) ?? '?'}d)` },
     { label: 'Last sign-in', value: <span className={cn(!g.last_sign_in_at && 'text-destructive')}>{g.last_sign_in_at ? `${formatDate(g.last_sign_in_at, true)} · ${relativeDays(g.last_sign_in_at)}` : 'Never'}</span> },
     { label: 'Non-interactive', value: relativeDays(g.last_non_interactive_sign_in_at) },
-    { label: 'Auth methods', value: g.auth_methods.length ? g.auth_methods.map((m) => titleCase(m.replace('AuthenticationMethod', ''))).join(', ') : <span className="text-muted-foreground">None registered</span> },
+    {
+      label: 'Auth methods',
+      value:
+        authMethods.status === 'present' ? (
+          authMethods.label
+            .split(', ')
+            .map((m) => titleCase(m))
+            .join(', ')
+        ) : (
+          <span className="text-muted-foreground">{authMethods.label}</span>
+        ),
+    },
     {
       label: 'Owner',
       value:

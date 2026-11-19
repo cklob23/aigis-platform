@@ -1,5 +1,6 @@
 import 'server-only'
 import { GraphClient, GraphError } from '@/lib/graph/client'
+import { authMethodsFromGraphFailure, authMethodsFromGraphValue } from '@/lib/risk/auth-methods'
 
 export type GraphUser = {
   id: string
@@ -98,12 +99,17 @@ export async function fetchAppAssignments(g: GraphClient, spId: string) {
   return g.getAll<{ principalId: string; principalType: string; principalDisplayName?: string }>(`/servicePrincipals/${spId}/appRoleAssignedTo?$top=999`)
 }
 
+/**
+ * UserAuthenticationMethod.Read.All is not in the requested consent set.
+ * A 403 or empty failure is unknown, not "no methods". Scan does not call this yet.
+ */
 export async function fetchAuthMethods(g: GraphClient, userId: string) {
   try {
     const res = await g.get<{ value: { '@odata.type': string }[] }>(`/users/${userId}/authentication/methods`)
-    return res.value.map((m) => m['@odata.type'].replace('#microsoft.graph.', ''))
-  } catch {
-    return []
+    return authMethodsFromGraphValue(res.value)
+  } catch (err) {
+    if (err instanceof GraphError) return authMethodsFromGraphFailure(err)
+    return authMethodsFromGraphFailure({})
   }
 }
 
