@@ -60,12 +60,19 @@ export async function getGuestDetail(tenantId: string, guestId: string) {
   let ownerGuest: OwnerGuest | null = null
   if (identity?.owner_identity_id) {
     const { data } = await supabase
-      .from('guest_identities')
-      .select('id,display_name,email')
+      .from('identities')
+      .select('id,display_name,primary_email,identity_class')
       .eq('tenant_id', tenantId)
-      .eq('identity_id', identity.owner_identity_id)
+      .eq('id', identity.owner_identity_id)
       .maybeSingle()
-    ownerGuest = (data as OwnerGuest | null) ?? null
+    ownerGuest = data
+      ? {
+          id: data.id as string,
+          display_name: (data.display_name as string | null) ?? null,
+          email: (data.primary_email as string | null) ?? null,
+          identity_class: (data.identity_class as string | null) ?? null,
+        }
+      : null
   }
   return {
     organization: (organization.data ?? null) as ExternalOrganization | null,

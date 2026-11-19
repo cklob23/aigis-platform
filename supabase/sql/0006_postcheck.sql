@@ -36,8 +36,15 @@ begin
   end if;
 
   select count(*) into stub_humans
-  from identities
-  where identity_class = 'human_internal';
+  from identities i
+  where i.identity_class = 'human_internal'
+    and not exists (
+      select 1
+      from identity_accounts a
+      where a.identity_id = i.id
+        and a.source = 'entra'
+        and a.account_kind = 'user'
+    );
   if stub_humans <> 0 then
     raise exception '0006 postcheck failed: human_internal stub identities = %', stub_humans;
   end if;

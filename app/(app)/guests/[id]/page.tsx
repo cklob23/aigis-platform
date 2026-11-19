@@ -72,7 +72,7 @@ export default async function GuestDetailPage({ params }: { params: Promise<{ id
             )}
             {owner.email && <span className="block font-mono text-muted-foreground text-xs">{owner.email}</span>}
             {g.sponsor_enabled === false && <span className="block text-xs">Sponsor account is disabled</span>}
-            {!owner.resolved && owner.kind === 'sponsor' && <span className="block text-muted-foreground text-xs">Not in inventory (no employee ingest)</span>}
+            {!owner.resolved && owner.kind === 'sponsor' && <span className="block text-muted-foreground text-xs">Not in inventory</span>}
           </span>
         ),
     },

@@ -77,4 +77,60 @@ describe('0006 owner identity (local postgres)', () => {
       '00000000-0000-0000-0000-000000000101',
     )
   })
+
+  it('postcheck allows an inventoried internal sponsor and keeps identities_legacy_view on guests', () => {
+    const legacy = scalar('select count(*) from identities_legacy_view')
+    const guests = scalar('select count(*) from guest_identities')
+    psql([
+      '-c',
+      `insert into identities (id, tenant_id, identity_class, display_name, primary_email, status)
+       values (
+         '00000000-0000-0000-0000-000000000201',
+         '00000000-0000-0000-0000-000000000010',
+         'human_internal',
+         'Pat Sponsor',
+         'pat@contoso.example',
+         'active'
+       )`,
+    ])
+    psql([
+      '-c',
+      `insert into identity_accounts (identity_id, tenant_id, source, source_object_id, account_kind, upn, enabled)
+       values (
+         '00000000-0000-0000-0000-000000000201',
+         '00000000-0000-0000-0000-000000000010',
+         'entra',
+         '11111111-1111-1111-1111-111111111101',
+         'user',
+         'pat@contoso.example',
+         true
+       )`,
+    ])
+    psql([
+      '-c',
+      `insert into identity_relations (tenant_id, from_identity_id, to_identity_id, relation_type)
+       values (
+         '00000000-0000-0000-0000-000000000010',
+         '00000000-0000-0000-0000-000000000101',
+         '00000000-0000-0000-0000-000000000201',
+         'sponsors'
+       )
+       on conflict do nothing`,
+    ])
+    psql([
+      '-c',
+      `update identities
+       set owner_identity_id = '00000000-0000-0000-0000-000000000201',
+           owner_kind = 'sponsor',
+           owner_email = 'pat@contoso.example'
+       where id = '00000000-0000-0000-0000-000000000101'`,
+    ])
+    apply('supabase/sql/0006_postcheck.sql')
+    expect(scalar('select count(*) from identities_legacy_view')).toBe(legacy)
+    expect(legacy).toBe(guests)
+    expect(scalar(`select owner_identity_id from identities where id = '00000000-0000-0000-0000-000000000101'`)).toBe(
+      '00000000-0000-0000-0000-000000000201',
+    )
+    expect(scalar(`select count(*) from identities where identity_class = 'human_internal'`)).toBe('1')
+  })
 })

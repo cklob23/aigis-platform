@@ -52,4 +52,30 @@ describe('describeOwner', () => {
       resolved: true,
     })
   })
+
+  it('links to an inventoried human_internal sponsor', () => {
+    expect(
+      describeOwner(
+        {
+          owner_kind: 'sponsor',
+          owner_identity_id: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
+          owner_display_name: 'Pat Sponsor',
+          owner_email: 'pat@contoso.example',
+          owner_ms_object_id: '11111111-1111-1111-1111-111111111101',
+        },
+        {
+          id: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
+          display_name: 'Pat Sponsor',
+          email: 'pat@contoso.example',
+          identity_class: 'human_internal',
+        },
+      ),
+    ).toEqual({
+      kind: 'sponsor',
+      label: 'Pat Sponsor',
+      email: 'pat@contoso.example',
+      href: '/identities/dddddddd-dddd-dddd-dddd-dddddddddddd',
+      resolved: true,
+    })
+  })
 })

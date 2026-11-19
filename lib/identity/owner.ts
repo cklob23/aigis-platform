@@ -1,4 +1,4 @@
-import type { IdentityOwnerKind } from '@/lib/types'
+import type { IdentityClass, IdentityOwnerKind } from '@/lib/types'
 
 export type OwnerSource = {
   owner_kind: IdentityOwnerKind
@@ -12,6 +12,7 @@ export type OwnerGuest = {
   id: string
   display_name: string | null
   email: string | null
+  identity_class?: IdentityClass | string | null
 }
 
 export type OwnerView = {
@@ -33,10 +34,14 @@ export function ownerKindLabel(kind: IdentityOwnerKind) {
   return KIND_LABEL[kind]
 }
 
+export function ownerHref(owner: Pick<OwnerGuest, 'id' | 'identity_class'>): string {
+  return owner.identity_class === 'human_internal' ? `/identities/${owner.id}` : `/guests/${owner.id}`
+}
+
 /**
- * Presentation for hub ownership. No employee ingest: unresolved sponsors
- * stay as email/oid. A linked guest is only shown when owner_identity_id
- * already exists in inventory.
+ * Presentation for hub ownership. Unresolved sponsors stay as email/oid.
+ * A linked identity (guest or inventoried human_internal) is shown when
+ * owner_identity_id already exists in inventory.
  */
 export function describeOwner(source: OwnerSource, ownerGuest?: OwnerGuest | null): OwnerView {
   if (source.owner_kind === 'none' && !source.owner_identity_id && !source.owner_email && !source.owner_ms_object_id && !source.owner_display_name) {
@@ -47,7 +52,7 @@ export function describeOwner(source: OwnerSource, ownerGuest?: OwnerGuest | nul
       kind: source.owner_kind === 'none' ? 'sponsor' : source.owner_kind,
       label: ownerGuest.display_name ?? ownerGuest.email ?? 'Linked identity',
       email: ownerGuest.email,
-      href: `/guests/${ownerGuest.id}`,
+      href: ownerHref(ownerGuest),
       resolved: true,
     }
   }

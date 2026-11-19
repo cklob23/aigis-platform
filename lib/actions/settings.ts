@@ -15,6 +15,7 @@ import {
   detectPrivilegedCapability,
   mergePrivilegedSettings,
   parsePrivilegedSettings,
+  shouldProbePrivilegedCapability,
 } from '@/lib/privileged/capability'
 import { livePrivilegedDeps } from '@/lib/privileged/graph'
 import { mustWrite } from '@/lib/supabase/write'
@@ -93,10 +94,13 @@ export async function updatePrivilegedModule(enabled: boolean): Promise<Result> 
     assertCan(session, 'settings.manage')
     const prev = parsePrivilegedSettings(tenant.settings)
     let capability = prev.capability
+    let granted_permissions = prev.granted_permissions
     if (enabled && !tenant.is_demo) {
-      capability = await detectPrivilegedCapability({ ms_tenant_id: tenant.ms_tenant_id }, livePrivilegedDeps(tenant.ms_tenant_id))
+      const deps = livePrivilegedDeps(tenant.ms_tenant_id)
+      capability = await detectPrivilegedCapability({ ms_tenant_id: tenant.ms_tenant_id }, deps)
+      granted_permissions = await deps.getRoles(tenant.ms_tenant_id, false)
     }
-    const settings = mergePrivilegedSettings(tenant.settings, { enabled, capability })
+    const settings = mergePrivilegedSettings(tenant.settings, { enabled, capability, granted_permissions })
     mustWrite('tenants privileged', await db().from('tenants').update({ settings }).eq('id', tenant.id))
     await audit(session, {
       action: enabled ? 'settings.privileged_enabled' : 'settings.privileged_disabled',
@@ -126,12 +130,15 @@ export async function recheckPrivilegedCapability(): Promise<Result> {
     const { session, tenant } = await requireContext()
     assertCan(session, 'settings.manage')
     const prev = parsePrivilegedSettings(tenant.settings)
-    if (tenant.is_demo) {
+    if (!shouldProbePrivilegedCapability(prev.enabled, tenant.is_demo)) {
       revalidatePath('/settings')
-      return { ok: true, message: 'Demo tenants do not call Microsoft Graph' }
+      if (tenant.is_demo) return { ok: true, message: 'Demo tenants do not call Microsoft Graph' }
+      return { ok: true, message: 'Privileged access is off' }
     }
-    const capability = await detectPrivilegedCapability({ ms_tenant_id: tenant.ms_tenant_id }, livePrivilegedDeps(tenant.ms_tenant_id))
-    const settings = mergePrivilegedSettings(tenant.settings, { enabled: prev.enabled, capability })
+    const deps = livePrivilegedDeps(tenant.ms_tenant_id)
+    const capability = await detectPrivilegedCapability({ ms_tenant_id: tenant.ms_tenant_id }, deps)
+    const granted_permissions = await deps.getRoles(tenant.ms_tenant_id, false)
+    const settings = mergePrivilegedSettings(tenant.settings, { enabled: prev.enabled, capability, granted_permissions })
     mustWrite('tenants privileged capability', await db().from('tenants').update({ settings }).eq('id', tenant.id))
     if (capabilityFingerprint(prev.capability) !== capabilityFingerprint(capability)) {
       await audit(session, {

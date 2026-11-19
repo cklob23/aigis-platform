@@ -1,4 +1,4 @@
-import type { IdentityAccountKind, IdentityOwnerKind, IdentityStatus } from '@/lib/types'
+import type { IdentityAccountKind, IdentityClass, IdentityOwnerKind, IdentityStatus } from '@/lib/types'
 
 /**
  * Build hub + entra account rows for an external guest.
@@ -39,6 +39,87 @@ export function ownerKindFromSponsor(
 export function identityStatusFromGuest(accountEnabled: boolean, removedAt: string | null | undefined): IdentityStatus {
   if (removedAt) return 'removed'
   return accountEnabled ? 'active' : 'disabled'
+}
+
+export type InternalUserHubSource = {
+  id: string
+  tenant_id: string
+  ms_object_id: string
+  display_name: string | null
+  email: string | null
+  upn: string | null
+  account_enabled: boolean
+  last_activity_at?: string | null
+  last_seen_at: string
+  removed_at?: string | null
+  on_premises_sync_enabled?: boolean | null
+  assigned_plans?: { servicePlanId?: string; service?: string; capabilityStatus?: string }[]
+  dedicated_admin?: boolean
+  inventory_reasons?: string[]
+}
+
+const ADMIN_NAME_RE = /(?:^|[^a-z0-9])admin(?:[^a-z0-9]|$)|(?:^|[._-])adm(?:[._-]|$)/i
+
+/**
+ * Dedicated admin: holds a directory role, is cloud-only (not on-prem synced),
+ * and either looks like an admin account or has no enabled assigned plans.
+ */
+export function isDedicatedAdminAccount(input: {
+  holdsDirectoryRole: boolean
+  onPremisesSyncEnabled?: boolean | null
+  displayName?: string | null
+  userPrincipalName?: string | null
+  assignedPlans?: { capabilityStatus?: string }[] | null
+}): boolean {
+  if (!input.holdsDirectoryRole) return false
+  if (input.onPremisesSyncEnabled === true) return false
+  const hay = `${input.displayName ?? ''} ${input.userPrincipalName ?? ''}`
+  if (ADMIN_NAME_RE.test(hay)) return true
+  const plans = input.assignedPlans ?? []
+  return !plans.some((plan) => plan.capabilityStatus === 'Enabled')
+}
+
+export function hubRowsFromUser(user: InternalUserHubSource) {
+  return {
+    identity: {
+      id: user.id,
+      tenant_id: user.tenant_id,
+      identity_class: 'human_internal' as IdentityClass,
+      display_name: user.display_name,
+      primary_email: user.email,
+      status: identityStatusFromGuest(user.account_enabled, user.removed_at),
+      risk_score: 0,
+      risk_level: 'low' as const,
+      recommended_action: 'keep' as const,
+      review_status: 'never_reviewed' as const,
+      last_reviewed_at: null as string | null,
+      owner_identity_id: null as string | null,
+      owner_kind: 'none' as IdentityOwnerKind,
+      owner_email: null as string | null,
+      owner_ms_object_id: null as string | null,
+      owner_display_name: null as string | null,
+      last_activity_at: user.last_activity_at ?? null,
+      first_seen_at: user.last_seen_at,
+      last_seen_at: user.last_seen_at,
+      removed_at: user.removed_at ?? null,
+    },
+    account: {
+      identity_id: user.id,
+      tenant_id: user.tenant_id,
+      source: 'entra' as const,
+      source_object_id: user.ms_object_id,
+      account_kind: 'user' as IdentityAccountKind,
+      upn: user.upn,
+      enabled: user.account_enabled,
+      last_activity_at: user.last_activity_at ?? null,
+      attrs: {
+        onPremisesSyncEnabled: user.on_premises_sync_enabled ?? null,
+        assignedPlans: user.assigned_plans ?? [],
+        dedicatedAdmin: user.dedicated_admin === true,
+        inventoryReasons: user.inventory_reasons ?? [],
+      },
+    },
+  }
 }
 
 export function hubRowsFromGuest(guest: GuestHubSource) {
