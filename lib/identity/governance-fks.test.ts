@@ -94,6 +94,14 @@ describe('0005 governance FKs (local postgres)', () => {
       scalar(`select count(*) from information_schema.columns
               where table_schema = 'public' and table_name = 'review_items' and column_name = 'guest_id'`),
     ).toBe('1')
+    expect(
+      scalar(`select is_nullable from information_schema.columns
+              where table_schema = 'public' and table_name = 'review_items' and column_name = 'guest_id'`),
+    ).toBe('NO')
+    expect(
+      scalar(`select is_nullable from information_schema.columns
+              where table_schema = 'public' and table_name = 'resource_memberships' and column_name = 'guest_id'`),
+    ).toBe('NO')
     expect(post).toMatch(/membership_count/)
   })
 
