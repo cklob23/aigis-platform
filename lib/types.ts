@@ -111,6 +111,26 @@ export type IdentityRelationType = 'owns' | 'sponsors' | 'same_as' | 'created_by
 export type AiSettings = { enabled: boolean; mode: 'on_demand' }
 export const DEFAULT_AI_SETTINGS: AiSettings = { enabled: false, mode: 'on_demand' }
 
+export type PrivilegedPimStatus = 'available' | 'unavailable' | 'needs_consent' | 'unknown'
+export type PrivilegedLicenseHint = 'p2' | 'p1' | 'governance' | 'none'
+
+export type PrivilegedCapability = {
+  pim: PrivilegedPimStatus
+  pim_groups: PrivilegedPimStatus
+  sign_in_activity: boolean
+  auth_methods: boolean
+  license_hint: PrivilegedLicenseHint
+  checked_at: string
+  scan_job_id: string | null
+}
+
+export type PrivilegedSettings = {
+  enabled: boolean
+  capability: PrivilegedCapability | null
+}
+
+export const DEFAULT_PRIVILEGED_SETTINGS: PrivilegedSettings = { enabled: false, capability: null }
+
 export type Identity = {
   id: string
   tenant_id: string

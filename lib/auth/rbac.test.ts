@@ -25,6 +25,14 @@ describe('RBAC matrix', () => {
     expect(can('auditor', 'remediation.request')).toBe(false)
     expect(can('auditor', 'remediation.execute')).toBe(false)
   })
+
+  it('reserves settings.manage for Global Admin and AIGIS Admin', () => {
+    expect(can('global_admin', 'settings.manage')).toBe(true)
+    expect(can('gs_admin', 'settings.manage')).toBe(true)
+    for (const role of ['security_analyst', 'auditor', 'read_only'] as RoleKey[]) {
+      expect(can(role, 'settings.manage')).toBe(false)
+    }
+  })
 })
 
 describe('resolveLiveRole', () => {

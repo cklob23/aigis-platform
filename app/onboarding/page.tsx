@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { ScanButton } from '@/components/scans/scan-button'
 import { completeOnboarding, setOnboardingStep } from '@/lib/actions/settings'
 import { cn } from '@/lib/utils'
+import { OnboardingPermissionList } from '@/components/onboarding/permission-list'
 
 export const metadata = { title: 'Connect your tenant' }
 
@@ -66,7 +67,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
               You signed in from Microsoft tenant <span className="font-mono text-foreground">{tenant.ms_tenant_id}</span>. AIGIS will create an isolated workspace for this tenant. You are its first administrator; you can invite auditors and analysts later.
             </p>
             <ul className="flex flex-col gap-2 text-sm">
-              {['Read-only discovery by default — nothing changes in Microsoft 365 until an administrator explicitly remediates.', 'Guest, group and app metadata is stored encrypted at rest and scoped to your tenant.', 'Every action is written to a tamper-evident audit log.'].map((t) => (
+              {['Read-only discovery by default. Nothing changes in Microsoft 365 until an administrator explicitly remediates.', 'Guest, group and app metadata is stored encrypted at rest and scoped to your tenant.', 'Every action is written to a tamper-evident audit log.'].map((t) => (
                 <li key={t} className="flex gap-2">
                   <Check className="mt-0.5 size-4 shrink-0 text-success" /> {t}
                 </li>
@@ -97,11 +98,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
                 <AlertDescription>Application permissions are active for {tenant.display_name}.</AlertDescription>
               </Alert>
             )}
-            <div className="grid gap-1 rounded-md border bg-muted/30 p-3 font-mono text-xs">
-              {['User.Read.All', 'Group.Read.All', 'Sites.Read.All', 'Application.Read.All', 'AuditLog.Read.All', 'Organization.Read.All'].map((s) => (
-                <span key={s}>{s}</span>
-              ))}
-            </div>
+            <OnboardingPermissionList />
             <div className="flex flex-wrap gap-2">
               {tenant.connection_status !== 'connected' ? (
                 <Button disabled={!configured} nativeButton={!configured} render={configured ? <a href="/api/auth/microsoft/consent" target="_top" /> : undefined}>
@@ -120,7 +117,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
         {step === 3 && (
           <>
             <h1 className="font-semibold text-xl tracking-tight">Verify Graph access</h1>
-            <p className="text-muted-foreground text-sm">AIGIS probes each permission with a minimal read so you know exactly what the first scan can see.</p>
+            <p className="text-muted-foreground text-sm">AIGIS checks each permission with a minimal read so you know exactly what the first scan can see.</p>
             <ul className="flex flex-col divide-y rounded-md border">
               {checks.map((c) => (
                 <li key={c.name} className="flex items-center gap-3 px-3 py-2 text-sm">
@@ -129,7 +126,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
                   <span className="ml-auto text-muted-foreground text-xs">{c.ok ? 'OK' : c.detail}</span>
                 </li>
               ))}
-              {checks.length === 0 && <li className="px-3 py-4 text-muted-foreground text-sm">{tenant.is_demo ? 'Demo tenant — Graph access is simulated.' : 'Consent is not active yet. Go back and grant admin consent.'}</li>}
+              {checks.length === 0 && <li className="px-3 py-4 text-muted-foreground text-sm">{tenant.is_demo ? 'Demo tenant. Graph access is simulated.' : 'Consent is not active yet. Go back and grant admin consent.'}</li>}
             </ul>
             {checks.some((c) => !c.ok && c.name === 'AuditLog.Read.All') && (
               <Alert>

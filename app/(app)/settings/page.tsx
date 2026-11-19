@@ -11,12 +11,19 @@ import { AiSettingsForm } from '@/components/settings/ai-settings-form'
 import { ResetDemoButton } from '@/components/settings/reset-demo-button'
 import { formatDate } from '@/lib/format'
 import { parseAiSettings } from '@/lib/ai/recommend'
+import { parsePrivilegedSettings, grantedPrivilegedPermissions } from '@/lib/privileged/capability'
+import { getAppOnlyRoles } from '@/lib/auth/microsoft'
+import { PrivilegedSettingsForm } from '@/components/settings/privileged-settings-form'
 
-export default async function GeneralSettingsPage() {
+export default async function GeneralSettingsPage({ searchParams }: { searchParams: Promise<{ consent?: string }> }) {
   const { session, tenant } = await requireOnboarded()
+  const { consent } = await searchParams
   const { data: sub } = await db().from('subscriptions').select('*').eq('organization_id', tenant.organization_id).maybeSingle()
   const notifications = (tenant.settings.notifications as { email?: boolean; weekly_digest?: boolean }) ?? {}
   const canManage = can(session.role, 'settings.manage')
+  const liveTenant = !tenant.is_demo && microsoftConfigured()
+  const roles = canManage && liveTenant ? await getAppOnlyRoles(tenant.ms_tenant_id, consent === 'granted').catch(() => []) : []
+  const privileged = parsePrivilegedSettings(tenant.settings)
 
   return (
     <>
@@ -86,6 +93,23 @@ export default async function GeneralSettingsPage() {
           <AiSettingsForm disabled={!canManage} initialEnabled={parseAiSettings(tenant.settings).enabled} />
         </CardContent>
       </Card>
+
+      {canManage && (
+        <Card id="privileged">
+          <CardHeader>
+            <CardTitle>Privileged access</CardTitle>
+            <CardDescription>Read-only. Turning this on doesn&apos;t change Dashboard or External identities.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <PrivilegedSettingsForm
+              initialEnabled={privileged.enabled}
+              capability={privileged.capability}
+              permissions={grantedPrivilegedPermissions(roles)}
+              consentHref={liveTenant ? '/api/auth/microsoft/consent?return=/settings' : null}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

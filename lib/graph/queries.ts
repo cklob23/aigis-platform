@@ -107,6 +107,47 @@ export async function fetchAuthMethods(g: GraphClient, userId: string) {
   }
 }
 
+export type GraphSubscribedSku = { skuPartNumber?: string; skuId?: string; capabilityStatus?: string }
+
+export async function fetchSubscribedSkus(g: GraphClient) {
+  const res = await g.get<{ value: GraphSubscribedSku[] }>('/subscribedSkus?$select=skuPartNumber,skuId,capabilityStatus')
+  return res.value
+}
+
+export async function fetchRoleAssignableGroupId(g: GraphClient): Promise<string | null> {
+  try {
+    const res = await g.get<{ value: { id: string }[] }>(
+      '/groups?$filter=isAssignableToRole eq true&$count=true&$select=id&$top=1',
+    )
+    return res.value[0]?.id ?? null
+  } catch {
+    return null
+  }
+}
+
+/** Read-only status probe. Never POST/PATCH/DELETE. */
+export async function probeGraphGet(g: GraphClient, path: string): Promise<{ status: number }> {
+  try {
+    await g.get(path)
+    return { status: 200 }
+  } catch (err) {
+    if (err instanceof GraphError) return { status: err.status }
+    throw err
+  }
+}
+
+export async function probeSignInActivity(g: GraphClient): Promise<boolean> {
+  try {
+    await g.get('/users?$top=1&$select=id,signInActivity')
+    return true
+  } catch (err) {
+    if (err instanceof GraphError && (err.status === 403 || err.code === 'Authentication_RequestFromNonPremiumTenantOrB2CTenant')) {
+      return false
+    }
+    throw err
+  }
+}
+
 export async function removeGroupMember(g: GraphClient, groupId: string, userId: string) {
   return g.delete(`/groups/${groupId}/members/${userId}/$ref`)
 }
@@ -138,11 +179,38 @@ export async function verifyPermissions(g: GraphClient) {
       checks.push({ name, ok: false, detail: err instanceof Error ? err.message : 'failed' })
     }
   }
+  /** 403 means the permission is missing. Other 4xx still mean Graph accepted the app token for this resource. */
+  const probeRead = async (name: string, path: string) => {
+    try {
+      await g.get(path)
+      checks.push({ name, ok: true })
+    } catch (err) {
+      if (err instanceof GraphError && err.status !== 401 && err.status !== 403 && err.status >= 400 && err.status < 500) {
+        checks.push({ name, ok: true, detail: 'permission present' })
+        return
+      }
+      checks.push({ name, ok: false, detail: err instanceof Error ? err.message : 'failed' })
+    }
+  }
   await probe('Organization.Read.All', '/organization?$select=id')
   await probe('User.Read.All', "/users?$top=1&$filter=userType eq 'Guest'&$select=id")
   await probe('Group.Read.All', '/groups?$top=1&$select=id')
   await probe('Application.Read.All', '/servicePrincipals?$top=1&$select=id')
   await probe('AuditLog.Read.All', '/users?$top=1&$select=id,signInActivity')
   await probe('Sites.Read.All', '/sites/root?$select=id')
+  await probeRead('RoleManagement.Read.Directory', '/roleManagement/directory/roleEligibilitySchedules?$top=1')
+  await probeRead('PrivilegedEligibilitySchedule.Read.AzureADGroup', '/identityGovernance/privilegedAccess/group/eligibilitySchedules?$top=1')
+  await probeRead('PrivilegedAssignmentSchedule.Read.AzureADGroup', '/identityGovernance/privilegedAccess/group/assignmentSchedules?$top=1')
+  try {
+    const first = await g.get<{ value: { id: string }[] }>('/users?$top=1&$select=id')
+    const userId = first.value[0]?.id
+    if (!userId) {
+      checks.push({ name: 'UserAuthenticationMethod.Read.All', ok: false, detail: 'no users to probe' })
+    } else {
+      await probe('UserAuthenticationMethod.Read.All', `/users/${userId}/authentication/methods`)
+    }
+  } catch (err) {
+    checks.push({ name: 'UserAuthenticationMethod.Read.All', ok: false, detail: err instanceof Error ? err.message : 'failed' })
+  }
   return checks
 }

@@ -29,6 +29,33 @@ export function formatDate(iso: string | null | undefined, withTime = false) {
     : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+/** Relative last-checked label. Hover title is local time plus the viewer's zone abbreviation. */
+export function formatCheckedAt(iso: string, now = new Date()): { label: string; title: string } {
+  const then = new Date(iso)
+  const diffMin = Math.round((now.getTime() - then.getTime()) / 60_000)
+  let label = 'Just now'
+  if (diffMin <= -1) label = 'Just now'
+  else if (diffMin >= 1 && diffMin < 60) label = `${diffMin} min ago`
+  else if (diffMin >= 60 && diffMin < 1440) {
+    const hours = Math.floor(diffMin / 60)
+    label = hours === 1 ? '1 hr ago' : `${hours} hr ago`
+  } else if (diffMin >= 1440) {
+    const days = Math.floor(diffMin / 1440)
+    label = days === 1 ? '1 day ago' : `${days} days ago`
+  }
+  const zone =
+    new Intl.DateTimeFormat('en-US', { timeZoneName: 'short' }).formatToParts(then).find((p) => p.type === 'timeZoneName')
+      ?.value ?? ''
+  const exact = then.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+  return { label, title: zone ? `${exact} ${zone}` : exact }
+}
+
 export function formatNumber(n: number | null | undefined) {
   return new Intl.NumberFormat('en-US').format(n ?? 0)
 }

@@ -8,16 +8,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatDate, titleCase } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { GRAPH_APPLICATION_READ_PERMISSIONS, GRAPH_APPLICATION_READ_PERMISSION_DETAILS } from '@/lib/graph/permissions'
 
 export const metadata = { title: 'Scans' }
 
 const SCOPES = [
-  { scope: 'User.Read.All', purpose: 'Enumerate guest users, sign-in activity, sponsors', type: 'Application' },
-  { scope: 'Group.Read.All', purpose: 'Teams, Microsoft 365 Groups, security groups and their members/owners', type: 'Application' },
-  { scope: 'Sites.Read.All', purpose: 'SharePoint sites connected to groups', type: 'Application' },
-  { scope: 'Application.Read.All', purpose: 'Enterprise app assignments held by guests', type: 'Application' },
-  { scope: 'AuditLog.Read.All', purpose: 'Last interactive / non-interactive sign-in timestamps', type: 'Application' },
-  { scope: 'Organization.Read.All', purpose: 'Verified domains and tenant name', type: 'Application' },
+  ...GRAPH_APPLICATION_READ_PERMISSIONS.map((scope) => ({
+    scope,
+    ...GRAPH_APPLICATION_READ_PERMISSION_DETAILS[scope],
+  })),
   { scope: 'User.ReadWrite.All · GroupMember.ReadWrite.All', purpose: 'Only when remediation is enabled: remove memberships, disable guests', type: 'Application (optional)' },
 ]
 

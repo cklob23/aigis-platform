@@ -13,15 +13,28 @@ const ITEMS = [
   { href: '/settings/remediation', label: 'Remediation queue' },
 ]
 
-export function SettingsNav() {
+export function SettingsNav({ showPrivileged = false }: { showPrivileged?: boolean }) {
   const pathname = usePathname()
+  const items = showPrivileged
+    ? [ITEMS[0], { href: '/settings#privileged', label: 'Privileged access' }, ...ITEMS.slice(1)]
+    : ITEMS
   return (
     <nav aria-label="Settings" className="flex gap-1 overflow-x-auto lg:flex-col">
-      {ITEMS.map((i) => (
-        <Link key={i.href} href={i.href} className={cn('whitespace-nowrap rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-accent', pathname === i.href ? 'bg-accent font-medium' : 'text-muted-foreground')}>
-          {i.label}
-        </Link>
-      ))}
+      {items.map((i) => {
+        const active = !i.href.includes('#') && pathname === i.href
+        return (
+          <Link
+            key={i.href}
+            href={i.href}
+            className={cn(
+              'whitespace-nowrap rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-accent',
+              active ? 'bg-accent font-medium' : 'text-muted-foreground',
+            )}
+          >
+            {i.label}
+          </Link>
+        )
+      })}
     </nav>
   )
 }
