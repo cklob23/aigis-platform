@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { RiskBadge } from '@/components/risk/risk-badge'
 import { decideReviewItem } from '@/lib/actions/governance'
 import { relativeDays } from '@/lib/format'
-import type { Guest, ReviewItem } from '@/lib/types'
+import { reviewItemGuestHref, reviewItemGuestLabel, type ReviewItemWithGuest } from '@/lib/reviews/item-subject'
 import { cn } from '@/lib/utils'
 
 const DECISIONS = [
@@ -21,18 +21,20 @@ const DECISIONS = [
   { key: 'remove', label: 'Remove', icon: X, className: 'hover:bg-destructive/15 hover:text-destructive data-[active=true]:bg-destructive/15 data-[active=true]:text-destructive' },
 ] as const
 
-export function ReviewItemRow({ item, canDecide, readOnly }: { item: ReviewItem & { guest: Guest }; canDecide: boolean; readOnly: boolean }) {
+export function ReviewItemRow({ item, canDecide, readOnly }: { item: ReviewItemWithGuest; canDecide: boolean; readOnly: boolean }) {
   const [comment, setComment] = useState('')
   const [pending, startTransition] = useTransition()
   const router = useRouter()
   const g = item.guest
+  const label = reviewItemGuestLabel(g)
+  const href = reviewItemGuestHref(g)
   const decided = item.status !== 'pending'
 
   const decide = (decision: (typeof DECISIONS)[number]['key']) => {
     startTransition(async () => {
       const res = await decideReviewItem({ itemId: item.id, decision, comment })
       if (res.ok) {
-        toast.success(`${g.display_name ?? g.email}: ${decision}`)
+        toast.success(`${label}: ${decision}`)
         router.refresh()
       } else toast.error(res.error)
     })
@@ -42,17 +44,23 @@ export function ReviewItemRow({ item, canDecide, readOnly }: { item: ReviewItem 
     <li className={cn('flex flex-col gap-3 p-4 lg:flex-row lg:items-start', decided && 'bg-muted/20')}>
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         <div className="flex flex-wrap items-center gap-2">
-          <Link href={`/guests/${g.id}`} className="font-medium hover:underline">
-            {g.display_name ?? g.email}
-          </Link>
-          <RiskBadge level={g.risk_level} score={g.risk_score} />
-          <span className="font-mono text-muted-foreground text-xs">{g.domain}</span>
+          {href ? (
+            <Link href={href} className="font-medium hover:underline">
+              {label}
+            </Link>
+          ) : (
+            <span className="font-medium">{label}</span>
+          )}
+          {g && <RiskBadge level={g.risk_level} score={g.risk_score} />}
+          {g && <span className="font-mono text-muted-foreground text-xs">{g.domain}</span>}
         </div>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground text-xs">
-          <span>Last sign-in {relativeDays(g.last_sign_in_at).toLowerCase()}</span>
-          <span>Sponsor {g.sponsor_display_name ?? 'none'}</span>
-          <span>Recommendation: {g.recommended_action.replace('_', ' ')}</span>
-        </div>
+        {g && (
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground text-xs">
+            <span>Last sign-in {relativeDays(g.last_sign_in_at).toLowerCase()}</span>
+            <span>Sponsor {g.sponsor_display_name ?? 'none'}</span>
+            <span>Recommendation: {g.recommended_action.replace('_', ' ')}</span>
+          </div>
+        )}
         <div className="flex flex-wrap gap-1">
           {item.resources_snapshot.slice(0, 6).map((r) => (
             <Badge key={r.id} variant="outline" className={cn('font-normal', r.sensitive && 'border-warning/50 text-warning')}>

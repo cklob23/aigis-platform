@@ -1,6 +1,7 @@
 import 'server-only'
 import { db } from '@/lib/supabase/admin'
-import type { AccessReview, AuditEvent, Guest, ReviewItem, ScanJob } from '@/lib/types'
+import { compareReviewItems, type ReviewItemWithGuest } from '@/lib/reviews/item-subject'
+import type { AccessReview, AuditEvent, ScanJob } from '@/lib/types'
 
 export async function listReviews(tenantId: string) {
   const supabase = db()
@@ -26,7 +27,7 @@ export async function getReviewDetail(tenantId: string, reviewId: string) {
   const { data: decisions } = await supabase.from('review_decisions').select('*').eq('tenant_id', tenantId).in('review_item_id', (items ?? []).map((i) => i.id)).order('created_at', { ascending: false })
   return {
     review: review as AccessReview,
-    items: ((items ?? []) as (ReviewItem & { guest: Guest })[]).sort((a, b) => (a.status === 'pending' ? -1 : 1) - (b.status === 'pending' ? -1 : 1) || b.guest.risk_score - a.guest.risk_score),
+    items: ((items ?? []) as ReviewItemWithGuest[]).sort(compareReviewItems),
     decisions: decisions ?? [],
   }
 }

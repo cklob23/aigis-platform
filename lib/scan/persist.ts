@@ -41,10 +41,23 @@ export async function persistIdentityRiskUpdates(
   }
 }
 
+export type RiskScoreInsert = {
+  guest_id?: string | null
+  identity_id?: string | null
+} & Record<string, unknown>
+
+/** Guest-keyed rows stay valid. Identity-only rows need identity_id. */
+export function assertRiskScoreSubject(row: RiskScoreInsert) {
+  if (row.guest_id == null && row.identity_id == null) {
+    throw new Error('risk_scores insert: guest_id or identity_id is required')
+  }
+}
+
 export async function persistRiskScores(
   insertBatch: (rows: unknown[]) => WriteTask,
-  scoreRows: unknown[],
+  scoreRows: RiskScoreInsert[],
 ) {
+  for (const row of scoreRows) assertRiskScoreSubject(row)
   for (const batch of chunk(scoreRows, 500)) {
     mustWrite('risk_scores insert', await insertBatch(batch))
   }

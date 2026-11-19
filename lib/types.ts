@@ -369,11 +369,15 @@ export type EmailSettings = {
   reply_to: string | null
 }
 
+export type ReviewItemSubjectKind = 'identity' | 'role_assignment'
+
 export type ReviewItem = {
   id: string
   review_id: string
-  guest_id: string
+  guest_id: string | null
   identity_id: string | null
+  subject_kind: ReviewItemSubjectKind
+  role_assignment_id: string | null
   status: 'pending' | 'decided' | 'actioned'
   decision: 'approve' | 'remove' | 'extend' | 'investigate' | null
   final_action: string | null

@@ -17,6 +17,7 @@ export async function attachReviewGuests(
 ) {
   const rollback = () => db.deleteReview(input.reviewId)
   await mustWriteOrRollback('review_items insert', await db.insertItems(input.items), rollback)
+  if (input.guestIds.length === 0) return
   await mustWriteOrRollback('guest_identities review_status', await db.updateGuestsPending(input.guestIds), rollback)
 }
 

@@ -33,6 +33,22 @@ describe('attachReviewGuests', () => {
     expect(db.deleteReview).not.toHaveBeenCalled()
   })
 
+  it('inserts identity-only items without updating guest_identities', async () => {
+    const db = {
+      insertItems: vi.fn(() => ok(null)),
+      updateGuestsPending: vi.fn(() => ok(null)),
+      deleteReview: vi.fn(() => ok(null)),
+    }
+    await attachReviewGuests(db, {
+      reviewId: 'rev-1',
+      items: [{ guest_id: null, identity_id: 'i9', subject_kind: 'identity' }],
+      guestIds: [],
+    })
+    expect(db.insertItems).toHaveBeenCalled()
+    expect(db.updateGuestsPending).not.toHaveBeenCalled()
+    expect(db.deleteReview).not.toHaveBeenCalled()
+  })
+
   it('deletes the review header when review_items insert fails', async () => {
     const db = {
       insertItems: vi.fn(() => fail('null identity_id')),

@@ -23,8 +23,14 @@ describe('requireIdentityId', () => {
     expect(requireIdentityId({ id: 'g1', identity_id: 'i1' })).toBe('i1')
   })
 
+  it('accepts identity-only rows without a guest id', () => {
+    expect(requireIdentityId({ identity_id: 'i9' })).toBe('i9')
+    expect(requireIdentityId({ guest_id: null, identity_id: 'i9' })).toBe('i9')
+  })
+
   it('fails closed without identity_id', () => {
     expect(() => requireIdentityId({ id: 'g1', identity_id: null })).toThrow(/missing identity_id/)
+    expect(() => requireIdentityId({ identity_id: null })).toThrow(/missing identity_id/)
   })
 })
 
@@ -36,6 +42,15 @@ describe('withIdentityId', () => {
 
   it('leaves identity_id null when guest_id is null (tenant-level alerts)', () => {
     expect(withIdentityId({ tenant_id: 't1', guest_id: null, title: 'scan failed' }, maps).identity_id).toBeNull()
+  })
+
+  it('keeps identity_id on identity-only rows', () => {
+    expect(withIdentityId({ tenant_id: 't1', guest_id: null, identity_id: 'i9', score: 4 }, maps)).toEqual({
+      tenant_id: 't1',
+      guest_id: null,
+      identity_id: 'i9',
+      score: 4,
+    })
   })
 
   it('fails closed when the guest is not in the map', () => {

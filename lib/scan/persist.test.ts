@@ -38,7 +38,16 @@ describe('persistIdentityRiskUpdates', () => {
 describe('persistRiskScores', () => {
   it('throws when a risk_scores batch insert fails', async () => {
     const insertBatch = vi.fn(async () => ({ error: { message: 'fk violation' } }))
-    await expect(persistRiskScores(insertBatch, [{ score: 10 }])).rejects.toThrow('risk_scores insert: fk violation')
+    await expect(persistRiskScores(insertBatch, [{ guest_id: 'g1', score: 10 }])).rejects.toThrow('risk_scores insert: fk violation')
+  })
+
+  it('accepts identity-only rows and rejects rows with neither key', async () => {
+    const insertBatch = vi.fn(async () => ({ error: null }))
+    await persistRiskScores(insertBatch, [{ guest_id: null, identity_id: 'i1', score: 4 }])
+    expect(insertBatch).toHaveBeenCalledWith([{ guest_id: null, identity_id: 'i1', score: 4 }])
+    await expect(persistRiskScores(insertBatch, [{ score: 10 }])).rejects.toThrow(
+      'risk_scores insert: guest_id or identity_id is required',
+    )
   })
 })
 

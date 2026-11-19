@@ -3,17 +3,23 @@ export type GuestGovernanceRef = {
   identity_id?: string | null
 }
 
+/** Guest row or identity-only subject. Identity-only rows omit guest id. */
+export type GovernanceSubjectRef = {
+  id?: string | null
+  guest_id?: string | null
+  identity_id?: string | null
+}
+
 export type GovernanceIdMaps = {
   identityIdByGuestId: Map<string, string>
   accountIdByIdentityId: Map<string, string>
 }
 
-/** Fail closed: every inventoried guest must already have identity_id (0004). */
-export function requireIdentityId(guest: GuestGovernanceRef): string {
-  if (!guest.identity_id) {
-    throw new Error(`fail closed: guest ${guest.id} is missing identity_id; apply 0004 before dual-writing governance rows`)
-  }
-  return guest.identity_id
+/** Fail closed: guest or identity-only rows must already have identity_id (0004). */
+export function requireIdentityId(row: GovernanceSubjectRef): string {
+  if (row.identity_id) return row.identity_id
+  const label = row.id ?? row.guest_id ?? 'unknown'
+  throw new Error(`fail closed: guest ${label} is missing identity_id; apply 0004 before dual-writing governance rows`)
 }
 
 export function identityIdForGuestId(guestId: string | null | undefined, maps: Pick<GovernanceIdMaps, 'identityIdByGuestId'>): string | null {
@@ -33,10 +39,11 @@ export function accountIdForIdentityId(identityId: string, maps: Pick<Governance
   return accountId
 }
 
-export function withIdentityId<T extends { guest_id?: string | null }>(
+export function withIdentityId<T extends { guest_id?: string | null; identity_id?: string | null }>(
   row: T,
   maps: Pick<GovernanceIdMaps, 'identityIdByGuestId'>,
 ): T & { identity_id: string | null } {
+  if (!row.guest_id) return { ...row, identity_id: row.identity_id ?? null }
   return { ...row, identity_id: identityIdForGuestId(row.guest_id, maps) }
 }
 
