@@ -34,7 +34,7 @@ import { writeGuestInventory } from '@/lib/identity/write-inventory'
 import { requireIdentityId, withMembershipIds } from '@/lib/identity/governance'
 import { loadGovernanceMaps } from '@/lib/identity/governance-maps'
 import { evaluateAlertRules } from '@/lib/alerts/evaluate'
-import { applyScanAlertResults } from '@/lib/scan/alerts'
+import { appendScanFailedAlertError, applyScanAlertResults } from '@/lib/scan/alerts'
 import { mustWrite } from '@/lib/supabase/write'
 import {
   persistGuestRiskUpdates,
@@ -587,7 +587,15 @@ export async function runScan(jobId: string, tenantId: string) {
     try {
       await evaluateAlertRules(tenantId, { scanJobId: jobId, scanStartedAt: now, scanFailed: message })
     } catch (alertErr) {
-      console.log('[v0] scan-failed alert evaluation failed:', alertErr instanceof Error ? alertErr.message : alertErr)
+      const combined = appendScanFailedAlertError(message, alertErr)
+      try {
+        mustWrite(
+          'scan_jobs failed alert note',
+          await supabase.from('scan_jobs').update({ error: combined }).eq('id', jobId),
+        )
+      } catch (statusErr) {
+        console.log('[v0] scan_jobs failed alert note:', statusErr instanceof Error ? statusErr.message : statusErr)
+      }
     }
     throw err
   }

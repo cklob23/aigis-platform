@@ -1,3 +1,9 @@
+/** Append a scan-failed alert write error so it is not only console.logged. */
+export function appendScanFailedAlertError(scanMessage: string, alertErr: unknown): string {
+  const extra = alertErr instanceof Error ? alertErr.message : 'alert evaluation failed'
+  return `${scanMessage}; scan-failed alerts: ${extra}`
+}
+
 /**
  * Record post-scan alert evaluation onto the job summary. Failures must throw
  * so runScan writes them to scan_jobs.error instead of completing as success.

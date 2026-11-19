@@ -14,6 +14,10 @@ describe('parseAiSettings', () => {
     expect(parseAiSettings({ ai: { enabled: true, mode: 'always' } })).toEqual({ enabled: true, mode: 'on_demand' })
   })
 
+  it('coerces mode so explainGuestRecommendation does not need a second mode check', () => {
+    expect(parseAiSettings({ ai: { enabled: true, mode: 'batch' } }).mode).toBe('on_demand')
+  })
+
   it('treats anything other than true as disabled', () => {
     expect(parseAiSettings({ ai: { enabled: 'yes' } }).enabled).toBe(false)
     expect(parseAiSettings({ ai: { enabled: false } }).enabled).toBe(false)
@@ -57,5 +61,10 @@ describe('AI module isolation', () => {
       expect(src).not.toMatch(/import\s*\{[^}]*remediateGuest/)
       expect(src).not.toMatch(/GraphClient/)
     }
+  })
+
+  it('does not keep an unreachable ai.mode !== on_demand check', () => {
+    const src = readFileSync(path.join(root, 'lib/actions/ai.ts'), 'utf8')
+    expect(src).not.toMatch(/ai\.mode\s*!==\s*['"]on_demand['"]/)
   })
 })

@@ -23,7 +23,6 @@ export async function explainGuestRecommendation(guestId: string): Promise<Resul
     assertCan(session, 'view')
     const ai = parseAiSettings(tenant.settings)
     if (!ai.enabled) return { ok: false, error: 'AI explanations are off. Enable them in Settings first.' }
-    if (ai.mode !== 'on_demand') return { ok: false, error: 'AI explanations only run on demand.' }
 
     const { data: guest } = await db()
       .from('guest_identities')

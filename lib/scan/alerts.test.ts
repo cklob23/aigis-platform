@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { WriteFailedError } from '@/lib/supabase/write'
-import { applyScanAlertResults } from '@/lib/scan/alerts'
+import { appendScanFailedAlertError, applyScanAlertResults } from '@/lib/scan/alerts'
+
+describe('appendScanFailedAlertError', () => {
+  it('keeps the original scan error and names the alert write failure', () => {
+    expect(appendScanFailedAlertError('Graph 403', new WriteFailedError('alerts insert', 'duplicate dedupe_key'))).toBe(
+      'Graph 403; scan-failed alerts: alerts insert: duplicate dedupe_key',
+    )
+  })
+})
 
 describe('applyScanAlertResults', () => {
   it('records created and emailed counts on success', async () => {

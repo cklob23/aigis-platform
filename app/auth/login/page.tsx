@@ -13,7 +13,7 @@ const ERRORS: Record<string, string> = {
   not_configured: 'Microsoft sign-in is not configured yet. Add MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET to the project environment.',
   demo_disabled: 'The demo tenant is disabled for this deployment. Sign in with Microsoft, or set GUESTSWEEP_DEMO=true to re-enable it.',
   invalid_state: 'The sign-in request expired or was tampered with. Please try again.',
-  not_an_administrator: 'Your account is not a AIGIS administrator for this tenant. Ask an existing administrator to invite you.',
+  not_an_administrator: 'Your account is not an AIGIS administrator for this tenant. Ask an existing administrator to invite you.',
   tenant_missing: 'Your tenant record could not be found. Please sign in again.',
   demo_failed: 'The demo tenant could not be prepared. Please try again in a moment.',
 }

@@ -4,6 +4,7 @@ import { listIdentities, type IdentityFilters } from '@/lib/data/identities'
 import type { ExternalOrganization, Guest, Identity, Membership, Resource, RiskLevel } from '@/lib/types'
 import type { OwnerGuest } from '@/lib/identity/owner'
 import { RISK_CAUSES, type RiskCauseKey } from '@/lib/risk/recommendation'
+import { requireQueryRow } from '@/lib/data/read'
 
 export type GuestFilters = IdentityFilters
 
@@ -78,7 +79,7 @@ export async function getGuestDetail(tenantId: string, guestId: string) {
     reviews: reviews.data ?? [],
     remediations: remediations.data ?? [],
     domain: domain.data,
-    explanation: explanationRow.error ? null : explanationRow.data,
+    explanation: requireQueryRow('recommendation_explanations', explanationRow),
   }
 }
 

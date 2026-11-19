@@ -40,6 +40,20 @@ begin
   if polices <> 0 then
     raise exception '0007 postcheck failed: expected deny-all RLS, found % policies', polices;
   end if;
+
+  if not exists (
+    select 1 from pg_indexes
+    where schemaname = 'public' and indexname = 'recommendation_explanations_identity_idx'
+  ) then
+    raise exception '0007 postcheck failed: recommendation_explanations_identity_idx missing';
+  end if;
+
+  if not exists (
+    select 1 from pg_indexes
+    where schemaname = 'public' and indexname = 'recommendation_explanations_guest_idx'
+  ) then
+    raise exception '0007 postcheck failed: recommendation_explanations_guest_idx missing';
+  end if;
 end $$;
 
 select

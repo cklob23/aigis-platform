@@ -56,6 +56,13 @@ describe('0007 recommendation explanations (local postgres)', () => {
       `),
     ).toBe('t')
     expect(scalar(`select count(*) from pg_policies where tablename = 'recommendation_explanations'`)).toBe('0')
+    expect(
+      scalar(`
+        select count(*) from pg_indexes
+        where schemaname = 'public'
+          and indexname in ('recommendation_explanations_identity_idx', 'recommendation_explanations_guest_idx')
+      `),
+    ).toBe('2')
   })
 
   it('is idempotent, then rollback drops the table, then forward-again passes gates', () => {

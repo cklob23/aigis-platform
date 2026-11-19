@@ -76,7 +76,7 @@ export function AppSidebar({
   user,
   tenant,
   counts,
-  canViewAudit = true,
+  canViewAudit = false,
 }: {
   user: SidebarUser
   tenant: SidebarTenant
