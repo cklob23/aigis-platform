@@ -6,7 +6,12 @@ import { classifyExternalIdentity } from '@/lib/identity/classify'
 import { hubRowsFromGuest, type GuestHubSource } from '@/lib/identity/provision'
 import { planInternalInventory } from '@/lib/identity/ingest'
 import { planPrivilegedInventory } from '@/lib/privileged/ingest'
-import { DEMO_ROLE_ASSIGNMENTS, DEMO_ROLE_DEFINITIONS } from '@/lib/demo/privileged-roles'
+import {
+  DEMO_GROUP_PIM_ELIGIBILITIES,
+  DEMO_PIM_ELIGIBILITIES,
+  DEMO_ROLE_ASSIGNMENTS,
+  DEMO_ROLE_DEFINITIONS,
+} from '@/lib/demo/privileged-roles'
 import { withIdentityId, withMembershipIds } from '@/lib/identity/governance'
 import { loadGovernanceMaps } from '@/lib/identity/governance-maps'
 import { DEFAULT_AI_SETTINGS, type DomainClassification, type RelationshipType, type ResourceType } from '@/lib/types'
@@ -287,11 +292,14 @@ async function seedDemoTenant() {
     tenantId,
     now: daysAgo(0.2),
     definitions: DEMO_ROLE_DEFINITIONS,
-    assignments: DEMO_ROLE_ASSIGNMENTS,
+    assignments: [...DEMO_ROLE_ASSIGNMENTS, ...DEMO_PIM_ELIGIBILITIES],
     existingRoles: [],
     existingAssignments: [],
     principalByMsObjectId: internalIdByOid,
     internalIdentityIds: internalPlan.identities.map((identity) => identity.id),
+    groupEligibilities: DEMO_GROUP_PIM_ELIGIBILITIES,
+    pim: 'available',
+    pimGroups: 'available',
   })
   mustWrite(
     'directory_roles insert',
@@ -300,6 +308,12 @@ async function seedDemoTenant() {
   mustWrite(
     'role_assignments insert',
     await supabase.from('role_assignments').insert(privilegedPlan.assignments.map((row) => ({ ...row, first_seen_at: daysAgo(95) }))),
+  )
+  mustWrite(
+    'group_pim_eligibilities insert',
+    await supabase
+      .from('group_pim_eligibilities')
+      .insert(privilegedPlan.groupEligibilities.map((row) => ({ ...row, first_seen_at: daysAgo(95) }))),
   )
   for (const patch of privilegedPlan.identityPatches) {
     mustWrite(

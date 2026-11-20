@@ -7,6 +7,7 @@
 --
 -- If review_items still reference role_assignments, this file raises and
 -- does not alter the catalog. Null those FKs first.
+-- If 0010 objects exist, roll back 0010 first.
 -- After this file: run supabase/sql/0009_precheck.sql to confirm the
 -- post-0008 shape is back.
 
@@ -16,6 +17,17 @@ do $$
 declare
   assignment_set bigint;
 begin
+  if exists (
+    select 1 from pg_tables where schemaname = 'public' and tablename = 'group_pim_eligibilities'
+  ) then
+    raise exception '0009 rollback failed: roll back 0010 first (group_pim_eligibilities exists)';
+  end if;
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'role_assignments' and column_name = 'starts_at'
+  ) then
+    raise exception '0009 rollback failed: roll back 0010 first (role_assignments.starts_at exists)';
+  end if;
   if exists (
     select 1 from pg_tables where schemaname = 'public' and tablename = 'role_assignments'
   ) then

@@ -7,8 +7,10 @@ import { formatCheckedAt } from '@/lib/format'
 import { GRAPH_APPLICATION_READ_PERMISSIONS, PRIVILEGED_READ_PERMISSIONS } from '@/lib/graph/permissions'
 import {
   detectPrivilegedCapability,
+  groupPimReadsEnabled,
   licenseHintFromSkus,
   parsePrivilegedSettings,
+  pimDirectoryReadsEnabled,
   pimStatusFromProbe,
   privilegedStageEnabled,
   shouldProbePrivilegedCapability,
@@ -60,6 +62,59 @@ describe('privilegedStageEnabled', () => {
     expect(privilegedStageEnabled({ privileged: { enabled: true } })).toBe(false)
     expect(privilegedStageEnabled({ privileged: { enabled: true, capability: null } })).toBe(false)
     expect(privilegedStageEnabled({ privileged: { enabled: true, capability: { pim: 'available' } } })).toBe(false)
+  })
+})
+
+const fullCapability = {
+  pim: 'available',
+  pim_groups: 'available',
+  sign_in_activity: true,
+  auth_methods: true,
+  license_hint: 'p2',
+  checked_at: '2026-11-19T12:00:00.000Z',
+  scan_job_id: null,
+} as const
+
+describe('pimDirectoryReadsEnabled / groupPimReadsEnabled', () => {
+  it('requires the privileged stage plus pim === available', () => {
+    expect(pimDirectoryReadsEnabled({ privileged: { enabled: true, capability: fullCapability } })).toBe(true)
+    expect(
+      pimDirectoryReadsEnabled({
+        privileged: { enabled: true, capability: { ...fullCapability, pim: 'unavailable' } },
+      }),
+    ).toBe(false)
+    expect(
+      pimDirectoryReadsEnabled({
+        privileged: { enabled: true, capability: { ...fullCapability, pim: 'needs_consent' } },
+      }),
+    ).toBe(false)
+    expect(
+      pimDirectoryReadsEnabled({
+        privileged: { enabled: true, capability: { ...fullCapability, pim: 'unknown' } },
+      }),
+    ).toBe(false)
+    expect(pimDirectoryReadsEnabled({ privileged: { enabled: true } })).toBe(false)
+    expect(pimDirectoryReadsEnabled({ privileged: { enabled: false, capability: fullCapability } })).toBe(false)
+  })
+
+  it('requires the privileged stage plus pim_groups === available', () => {
+    expect(groupPimReadsEnabled({ privileged: { enabled: true, capability: fullCapability } })).toBe(true)
+    expect(
+      groupPimReadsEnabled({
+        privileged: { enabled: true, capability: { ...fullCapability, pim_groups: 'unavailable' } },
+      }),
+    ).toBe(false)
+    expect(
+      groupPimReadsEnabled({
+        privileged: { enabled: true, capability: { ...fullCapability, pim_groups: 'needs_consent' } },
+      }),
+    ).toBe(false)
+    expect(
+      groupPimReadsEnabled({
+        privileged: { enabled: true, capability: { ...fullCapability, pim: 'needs_consent' } },
+      }),
+    ).toBe(false)
+    expect(groupPimReadsEnabled({ privileged: { enabled: true } })).toBe(false)
   })
 })
 
@@ -220,16 +275,27 @@ describe('privileged module isolation', () => {
   it('keeps privileged Graph helpers GET-only', () => {
     const src = readFileSync(path.join(root, 'lib/graph/privileged.ts'), 'utf8')
     expect(src).toMatch(/g\.getAll/)
+    expect(src).toMatch(/roleManagement\/directory\/roleEligibilitySchedules/)
+    expect(src).toMatch(/identityGovernance\/privilegedAccess\/group\/eligibilitySchedules/)
     expect(src).not.toMatch(/\b(post|patch|delete)\s*\(/i)
     expect(src).not.toMatch(/roleManagement\/directory\/roleDefinitions.*\$filter/)
+    expect(src).not.toMatch(/roleAssignmentScheduleRequests/)
+    expect(src).not.toMatch(/eligibilityScheduleRequests/)
   })
 
   it('inventories roles only from the flag-gated privileged stage', () => {
     const engine = readFileSync(path.join(root, 'lib/scan/engine.ts'), 'utf8')
     const stage = readFileSync(path.join(root, 'lib/scan/privileged.ts'), 'utf8')
     expect(engine).toMatch(/if \(privilegedOn\)/)
+    expect(engine).toMatch(/runPrivilegedStage\(jobId, tenantId, g, tenant\.settings/)
     expect(stage).toMatch(/planPrivilegedInventory/)
     expect(stage).toMatch(/privileged\.inventory_synced/)
+    expect(stage).toMatch(/pimDirectoryReadsEnabled/)
+    expect(stage).toMatch(/groupPimReadsEnabled/)
+    expect(stage).toMatch(/fetchRoleEligibilitySchedules/)
+    expect(stage).toMatch(/fetchGroupEligibilitySchedules/)
+    expect(stage).toMatch(/pimOn \? await fetchRoleEligibilitySchedules/)
+    expect(stage).toMatch(/groupPimOn \? await fetchGroupEligibilitySchedules/)
     expect(engine).not.toMatch(/planPrivilegedInventory/)
   })
 })

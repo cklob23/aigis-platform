@@ -96,8 +96,8 @@ function resolveSponsorIdentityId(
     if (byOid) return byOid
   }
   const addr = normalizeAddr(guest.sponsor_email)
-  if (addr) return addrToIdentityId.get(addr)
-  return undefined
+  if (!addr) return undefined
+  return addrToIdentityId.get(addr)
 }
 
 export function asExternalGuest(row: Guest): Guest {
@@ -168,11 +168,18 @@ export function planGuestInventory(input: {
 
   const oidToIdentityId = new Map(guests.map((guest) => [guest.ms_object_id, guest.identity_id]))
   const addrToIdentityId = new Map<string, string>()
+  const ambiguousAddrs = new Set<string>()
   for (const row of input.internals ?? []) {
     if (!row.ms_object_id || !row.identity_id) continue
     if (!oidToIdentityId.has(row.ms_object_id)) oidToIdentityId.set(row.ms_object_id, row.identity_id)
     for (const addr of [normalizeAddr(row.email), normalizeAddr(row.upn)]) {
-      if (addr && !addrToIdentityId.has(addr)) addrToIdentityId.set(addr, row.identity_id)
+      if (!addr || ambiguousAddrs.has(addr)) continue
+      const existing = addrToIdentityId.get(addr)
+      if (!existing) addrToIdentityId.set(addr, row.identity_id)
+      else if (existing !== row.identity_id) {
+        addrToIdentityId.delete(addr)
+        ambiguousAddrs.add(addr)
+      }
     }
   }
   const relations: SponsorRelationRow[] = []

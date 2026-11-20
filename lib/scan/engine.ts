@@ -369,7 +369,7 @@ export async function runScan(jobId: string, tenantId: string) {
 
       if (privilegedOn) {
         await progress('privileged', 29, 'Inventorying internal users…')
-        const internalPlan = await runPrivilegedStage(jobId, tenantId, g)
+        const internalPlan = await runPrivilegedStage(jobId, tenantId, g, tenant.settings as Record<string, unknown>)
         const { data: guestsAfterInternals } = await supabase
           .from('guest_identities')
           .select('id,ms_object_id,identity_id,removed_at')

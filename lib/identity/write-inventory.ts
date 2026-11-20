@@ -181,6 +181,23 @@ export async function writePrivilegedInventory(plan: PrivilegedInventoryPlan) {
         .in('id', plan.removedRoleIds),
     )
   }
+  for (const batch of chunk(plan.groupEligibilities, 500)) {
+    if (!batch.length) continue
+    mustWrite(
+      'group_pim_eligibilities upsert',
+      await supabase.from('group_pim_eligibilities').upsert(batch, { onConflict: 'tenant_id,ms_schedule_id' }),
+    )
+  }
+  if (plan.removedGroupEligibilityIds.length) {
+    mustWrite(
+      'group_pim_eligibilities soft-remove',
+      await supabase
+        .from('group_pim_eligibilities')
+        .update({ removed_at: plan.now, last_seen_at: plan.now })
+        .eq('tenant_id', tenantId)
+        .in('id', plan.removedGroupEligibilityIds),
+    )
+  }
   for (const batch of chunk(plan.identityPatches, 500)) {
     for (const patch of batch) {
       mustWrite(

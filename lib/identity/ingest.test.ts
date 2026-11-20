@@ -236,6 +236,43 @@ describe('planGuestInventory sponsor relations', () => {
     expect(plan.identities[0].owner_identity_id).toBe('dddddddd-dddd-dddd-dddd-dddddddddddd')
   })
 
+  it('leaves the sponsor unresolved when more than one internal matches the email or UPN', () => {
+    const pat = CONTOSO_INTERNAL_USERS[0]!
+    const plan = planGuestInventory({
+      tenantId,
+      now,
+      incoming: [
+        incoming({
+          ms_object_id: 'oid-ambiguous',
+          display_name: 'Ambiguous Sponsor Guest',
+          sponsor_ms_object_id: '99999999-9999-9999-9999-999999999999',
+          sponsor_email: pat.email,
+          sponsor_display_name: pat.display_name,
+        }),
+      ],
+      existing: [],
+      internals: [
+        {
+          ms_object_id: pat.ms_object_id,
+          identity_id: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
+          email: pat.email,
+          upn: pat.upn,
+        },
+        {
+          ms_object_id: '11111111-1111-1111-1111-111111111199',
+          identity_id: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
+          email: null,
+          upn: pat.email,
+        },
+      ],
+      generateId: () => 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+    })
+    expect(plan.relations).toEqual([])
+    expect(plan.identities[0].owner_identity_id).toBeNull()
+    expect(plan.identities[0].owner_kind).toBe('sponsor')
+    expect(plan.identities[0].owner_email).toBe(pat.email)
+  })
+
   it('matches a sponsor by UPN when sponsor_ms_object_id is absent', () => {
     const pat = CONTOSO_INTERNAL_USERS[0]!
     const plan = planGuestInventory({
