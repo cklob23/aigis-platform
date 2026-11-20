@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatDate, relativeDays, daysBetween, titleCase } from '@/lib/format'
 import { RESOURCE_TYPE_LABELS } from '@/lib/types'
 import { describeRecommendation } from '@/lib/risk/recommendation'
-import { describeOwner } from '@/lib/identity/owner'
+import { describeOwner, ownerDiffersFromSponsor } from '@/lib/identity/owner'
 import { parseAiSettings } from '@/lib/ai/recommend'
 import { ExplainRecommendation } from '@/components/guests/explain-recommendation'
 import { OwnerFact } from '@/components/guests/owner-fact'
@@ -30,16 +30,19 @@ export default async function GuestDetailPage({ params }: { params: Promise<{ id
   if (!data) notFound()
   const { guest: g, identity, ownerGuest, memberships, activity, history, reviews, remediations, domain, organization, explanation } = data
   const aiEnabled = parseAiSettings(tenant.settings).enabled
-  const owner = describeOwner(
-    identity ?? {
-      owner_kind: g.sponsor_ms_object_id || g.sponsor_email ? 'sponsor' : 'none',
-      owner_identity_id: null,
+  const distinctOwner = ownerDiffersFromSponsor(identity, g)
+  const hasSponsor = Boolean(g.sponsor_ms_object_id || g.sponsor_email || g.sponsor_display_name)
+  const sponsor = describeOwner(
+    {
+      owner_kind: hasSponsor ? 'sponsor' : 'none',
+      owner_identity_id: distinctOwner ? null : (identity?.owner_identity_id ?? null),
       owner_display_name: g.sponsor_display_name,
       owner_email: g.sponsor_email,
       owner_ms_object_id: g.sponsor_ms_object_id,
     },
-    ownerGuest,
+    distinctOwner ? null : ownerGuest,
   )
+  const owner = distinctOwner && identity ? describeOwner(identity, ownerGuest) : null
   const sensitive = memberships.filter((m) => m.resource.is_sensitive)
   const factors = [...g.risk_factors].sort((a, b) => b.points - a.points)
   const recommendation = describeRecommendation(g)
@@ -56,10 +59,10 @@ export default async function GuestDetailPage({ params }: { params: Promise<{ id
     { label: 'Last sign-in', value: <span className={cn(!g.last_sign_in_at && 'text-destructive')}>{g.last_sign_in_at ? `${formatDate(g.last_sign_in_at, true)} · ${relativeDays(g.last_sign_in_at)}` : 'Never'}</span> },
     { label: 'Non-interactive', value: relativeDays(g.last_non_interactive_sign_in_at) },
     { label: 'Auth methods', value: g.auth_methods.length ? g.auth_methods.map((m) => titleCase(m.replace('AuthenticationMethod', ''))).join(', ') : <span className="text-muted-foreground">None registered</span> },
-    {
-      label: 'Owner',
-      value: <OwnerFact owner={owner} sponsorEnabled={g.sponsor_enabled} />,
-    },
+    { label: 'Sponsor', value: <OwnerFact owner={sponsor} sponsorEnabled={g.sponsor_enabled} /> },
+    ...(owner
+      ? [{ label: 'Owner', value: <OwnerFact owner={owner} /> }]
+      : []),
     { label: 'Review status', value: <span className="capitalize">{titleCase(g.review_status)}{g.last_reviewed_at && <span className="ml-1 text-muted-foreground">· {relativeDays(g.last_reviewed_at)}</span>}</span> },
     { label: 'First seen by AIGIS', value: formatDate(g.first_seen_at) },
   ]

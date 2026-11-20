@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeOwner, ownerHref } from '@/lib/identity/owner'
+import { describeOwner, ownerDiffersFromSponsor, ownerHref } from '@/lib/identity/owner'
 
 const none = {
   owner_kind: 'none' as const,
@@ -80,6 +80,49 @@ describe('describeOwner', () => {
       resolved: true,
       internal: true,
     })
+  })
+})
+
+describe('ownerDiffersFromSponsor', () => {
+  const sponsor = { sponsor_email: 'pat@contoso.example', sponsor_ms_object_id: '11111111-1111-1111-1111-111111111101' }
+
+  it('is false when hub ownership is the Entra sponsor', () => {
+    expect(
+      ownerDiffersFromSponsor(
+        {
+          owner_kind: 'sponsor',
+          owner_identity_id: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
+          owner_email: 'pat@contoso.example',
+          owner_ms_object_id: '11111111-1111-1111-1111-111111111101',
+        },
+        sponsor,
+      ),
+    ).toBe(false)
+  })
+
+  it('is true for assigned or inferred owners and for a guest owner with a different oid', () => {
+    expect(
+      ownerDiffersFromSponsor(
+        {
+          owner_kind: 'assigned',
+          owner_identity_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+          owner_email: 'a@ex.example',
+          owner_ms_object_id: 'oid-a',
+        },
+        sponsor,
+      ),
+    ).toBe(true)
+    expect(
+      ownerDiffersFromSponsor(
+        {
+          owner_kind: 'sponsor',
+          owner_identity_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+          owner_email: 'a@ex.example',
+          owner_ms_object_id: 'oid-a',
+        },
+        sponsor,
+      ),
+    ).toBe(true)
   })
 })
 

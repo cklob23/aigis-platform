@@ -49,6 +49,32 @@ function isInternalOwner(owner: Pick<OwnerGuest, 'identity_class'> | null | unde
   return owner?.identity_class === 'human_internal'
 }
 
+export type SponsorRef = {
+  sponsor_email: string | null
+  sponsor_ms_object_id: string | null
+}
+
+/**
+ * True when hub ownership is not the Entra sponsor (assigned/inferred, or a
+ * linked identity whose email/oid does not match the sponsor). The Identity
+ * card then shows a separate Owner row. owner_kind sponsor with the same
+ * person stays on the Sponsor row only.
+ */
+export function ownerDiffersFromSponsor(
+  identity: Pick<OwnerSource, 'owner_kind' | 'owner_identity_id' | 'owner_email' | 'owner_ms_object_id'> | null | undefined,
+  sponsor: SponsorRef,
+): boolean {
+  if (!identity) return false
+  if (identity.owner_kind === 'assigned' || identity.owner_kind === 'inferred') return true
+  const ownerOid = identity.owner_ms_object_id
+  const sponsorOid = sponsor.sponsor_ms_object_id
+  if (ownerOid && sponsorOid && ownerOid !== sponsorOid) return true
+  const ownerEmail = identity.owner_email?.toLowerCase() ?? null
+  const sponsorEmail = sponsor.sponsor_email?.toLowerCase() ?? null
+  if (ownerEmail && sponsorEmail && ownerEmail !== sponsorEmail) return true
+  return false
+}
+
 /**
  * Presentation for hub ownership. Unresolved sponsors stay as email/oid.
  * A linked identity (guest or inventoried human_internal) is shown when
