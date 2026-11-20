@@ -1,6 +1,7 @@
 import 'server-only'
 import { db } from '@/lib/supabase/admin'
 import type { GuestInventoryPlan, InternalInventoryPlan } from '@/lib/identity/ingest'
+import type { PrivilegedInventoryPlan } from '@/lib/privileged/ingest'
 import { mustWrite } from '@/lib/supabase/write'
 
 function chunk<T>(arr: T[], size: number) {
@@ -139,4 +140,68 @@ export async function writeInternalInventory(plan: InternalInventoryPlan) {
 
   await assertExternalInventory(supabase, tenantId)
   return { identityCount: plan.identities.length, accountCount: plan.accounts.length }
+}
+
+/**
+ * Persist directory roles, assignments, and identity privilege flags.
+ * Does not touch guest_identities. Soft-removes missing rows.
+ */
+export async function writePrivilegedInventory(plan: PrivilegedInventoryPlan) {
+  const supabase = db()
+  const tenantId = plan.tenantId
+
+  for (const batch of chunk(plan.roles, 500)) {
+    if (!batch.length) continue
+    mustWrite('directory_roles upsert', await supabase.from('directory_roles').upsert(batch, { onConflict: 'tenant_id,ms_role_id' }))
+  }
+  for (const batch of chunk(plan.assignments, 500)) {
+    if (!batch.length) continue
+    mustWrite(
+      'role_assignments upsert',
+      await supabase.from('role_assignments').upsert(batch, { onConflict: 'tenant_id,ms_assignment_id' }),
+    )
+  }
+  if (plan.removedAssignmentIds.length) {
+    mustWrite(
+      'role_assignments soft-remove',
+      await supabase
+        .from('role_assignments')
+        .update({ removed_at: plan.now, last_seen_at: plan.now })
+        .eq('tenant_id', tenantId)
+        .in('id', plan.removedAssignmentIds),
+    )
+  }
+  if (plan.removedRoleIds.length) {
+    mustWrite(
+      'directory_roles soft-remove',
+      await supabase
+        .from('directory_roles')
+        .update({ removed_at: plan.now, last_seen_at: plan.now })
+        .eq('tenant_id', tenantId)
+        .in('id', plan.removedRoleIds),
+    )
+  }
+  for (const batch of chunk(plan.identityPatches, 500)) {
+    for (const patch of batch) {
+      mustWrite(
+        'identities privilege flags',
+        await supabase
+          .from('identities')
+          .update({ is_privileged: patch.is_privileged, privilege_tier: patch.privilege_tier })
+          .eq('tenant_id', tenantId)
+          .eq('id', patch.id),
+      )
+    }
+  }
+  const keepPrivileged = plan.identityPatches.filter((row) => row.is_privileged).map((row) => row.id)
+  let clear = supabase
+    .from('identities')
+    .update({ is_privileged: false, privilege_tier: null })
+    .eq('tenant_id', tenantId)
+    .eq('is_privileged', true)
+  if (keepPrivileged.length) clear = clear.not('id', 'in', `(${keepPrivileged.join(',')})`)
+  mustWrite('identities clear stale privilege', await clear)
+
+  await assertExternalInventory(supabase, tenantId)
+  return { roleCount: plan.roles.length, assignmentCount: plan.assignments.length }
 }

@@ -54,10 +54,10 @@ function parseGrantedPermissions(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string' && item.length > 0)
 }
 
-/** Live privileged scan stage. Strict enabled flag, and skip when directory PIM still needs consent. */
+/** Live privileged scan stage. Strict enabled flag; missing capability is not ready. */
 export function privilegedStageEnabled(settings: Record<string, unknown> | null | undefined): boolean {
   const parsed = parsePrivilegedSettings(settings)
-  return parsed.enabled === true && parsed.capability?.pim !== 'needs_consent'
+  return parsed.enabled === true && parsed.capability != null && parsed.capability.pim !== 'needs_consent'
 }
 
 /** Recheck probes Graph. Off and demo tenants must not. */

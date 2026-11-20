@@ -1,6 +1,8 @@
 import 'server-only'
 import { db } from '@/lib/supabase/admin'
+import { audit } from '@/lib/audit'
 import type { GraphClient } from '@/lib/graph/client'
+import { fetchRoleAssignments, fetchRoleDefinitions } from '@/lib/graph/privileged'
 import {
   fetchDirectoryRolePrincipalIds,
   fetchManager,
@@ -12,7 +14,8 @@ import {
   type IncomingInternalUser,
   type InternalInventoryPlan,
 } from '@/lib/identity/ingest'
-import { writeInternalInventory } from '@/lib/identity/write-inventory'
+import { writeInternalInventory, writePrivilegedInventory } from '@/lib/identity/write-inventory'
+import { planPrivilegedInventory } from '@/lib/privileged/ingest'
 
 function chunk<T>(arr: T[], size: number) {
   const out: T[][] = []
@@ -37,11 +40,10 @@ function asIncoming(user: GraphInternalUser, flags: { is_role_holder?: boolean; 
 }
 
 /**
- * Users part of the privileged stage: inventory role holders, guest sponsors,
- * and role-holder managers as human_internal. Does not inventory roles.
+ * Privileged stage: inventory role holders, guest sponsors, and role-holder
+ * managers as human_internal, then inventory directory roles and assignments.
  */
 export async function runPrivilegedStage(jobId: string, tenantId: string, g: GraphClient): Promise<InternalInventoryPlan> {
-  void jobId
   const supabase = db()
   const now = new Date().toISOString()
 
@@ -105,5 +107,43 @@ export async function runPrivilegedStage(jobId: string, tenantId: string, g: Gra
     })),
   })
   await writeInternalInventory(plan)
+
+  const [definitions, assignments, existingRolesRes, existingAssignmentsRes] = await Promise.all([
+    fetchRoleDefinitions(g),
+    fetchRoleAssignments(g),
+    supabase.from('directory_roles').select('id,ms_role_id,removed_at').eq('tenant_id', tenantId),
+    supabase.from('role_assignments').select('id,ms_assignment_id,removed_at').eq('tenant_id', tenantId),
+  ])
+  const principalByMsObjectId = new Map(plan.accounts.map((account) => [account.source_object_id, account.identity_id]))
+  const rolePlan = planPrivilegedInventory({
+    tenantId,
+    now,
+    definitions: definitions.map((row) => ({
+      ms_role_id: row.id,
+      template_id: row.templateId ?? null,
+      display_name: row.displayName ?? row.id,
+      description: row.description ?? null,
+      is_built_in: row.isBuiltIn,
+      ms_is_privileged: row.isPrivileged,
+    })),
+    assignments: assignments.map((row) => ({
+      ms_assignment_id: row.id,
+      ms_role_id: row.roleDefinitionId ?? '',
+      principal_ms_object_id: row.principalId ?? '',
+      directory_scope_id: row.directoryScopeId ?? '/',
+    })),
+    existingRoles: (existingRolesRes.data ?? []) as { id: string; ms_role_id: string; removed_at: string | null }[],
+    existingAssignments: (existingAssignmentsRes.data ?? []) as { id: string; ms_assignment_id: string; removed_at: string | null }[],
+    principalByMsObjectId,
+    internalIdentityIds: plan.identities.map((identity) => identity.id),
+  })
+  await writePrivilegedInventory(rolePlan)
+  await audit({ tenantId, userId: '', email: 'system' } as never, {
+    action: 'privileged.inventory_synced',
+    targetType: 'tenant',
+    targetId: tenantId,
+    newState: rolePlan.auditState,
+    correlationId: jobId,
+  })
   return plan
 }

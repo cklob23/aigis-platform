@@ -51,6 +51,8 @@ export type SponsorRelationRow = {
 export type InventoriedInternal = {
   ms_object_id: string
   identity_id: string
+  email?: string | null
+  upn?: string | null
 }
 
 type IdentityScanRow = Omit<
@@ -77,6 +79,25 @@ export type GuestInventoryPlan = {
   removedGuestIds: string[]
   removedIdentityIds: string[]
   newCount: number
+}
+
+function normalizeAddr(value: string | null | undefined): string | null {
+  const trimmed = value?.trim().toLowerCase()
+  return trimmed ? trimmed : null
+}
+
+function resolveSponsorIdentityId(
+  guest: Pick<IncomingExternalGuest, 'sponsor_ms_object_id' | 'sponsor_email'>,
+  oidToIdentityId: Map<string, string>,
+  addrToIdentityId: Map<string, string>,
+): string | undefined {
+  if (guest.sponsor_ms_object_id) {
+    const byOid = oidToIdentityId.get(guest.sponsor_ms_object_id)
+    if (byOid) return byOid
+  }
+  const addr = normalizeAddr(guest.sponsor_email)
+  if (addr) return addrToIdentityId.get(addr)
+  return undefined
 }
 
 export function asExternalGuest(row: Guest): Guest {
@@ -146,14 +167,17 @@ export function planGuestInventory(input: {
   }))
 
   const oidToIdentityId = new Map(guests.map((guest) => [guest.ms_object_id, guest.identity_id]))
+  const addrToIdentityId = new Map<string, string>()
   for (const row of input.internals ?? []) {
     if (!row.ms_object_id || !row.identity_id) continue
     if (!oidToIdentityId.has(row.ms_object_id)) oidToIdentityId.set(row.ms_object_id, row.identity_id)
+    for (const addr of [normalizeAddr(row.email), normalizeAddr(row.upn)]) {
+      if (addr && !addrToIdentityId.has(addr)) addrToIdentityId.set(addr, row.identity_id)
+    }
   }
   const relations: SponsorRelationRow[] = []
   for (const guest of guests) {
-    if (!guest.sponsor_ms_object_id) continue
-    const toId = oidToIdentityId.get(guest.sponsor_ms_object_id)
+    const toId = resolveSponsorIdentityId(guest, oidToIdentityId, addrToIdentityId)
     if (!toId || toId === guest.identity_id) continue
     relations.push({
       tenant_id: input.tenantId,

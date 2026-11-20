@@ -200,6 +200,69 @@ describe('planGuestInventory sponsor relations', () => {
     expect(plan.identities[0].identity_class).toBe('external')
   })
 
+  it('falls back to matching the sponsor by email or UPN when the oid is missing from inventory', () => {
+    const pat = CONTOSO_INTERNAL_USERS[0]!
+    const plan = planGuestInventory({
+      tenantId,
+      now,
+      incoming: [
+        incoming({
+          ms_object_id: 'oid-email-only',
+          display_name: 'Email Sponsor Guest',
+          sponsor_ms_object_id: '99999999-9999-9999-9999-999999999999',
+          sponsor_email: pat.email.toUpperCase(),
+          sponsor_display_name: pat.display_name,
+        }),
+      ],
+      existing: [],
+      internals: [
+        {
+          ms_object_id: pat.ms_object_id,
+          identity_id: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
+          email: pat.email,
+          upn: pat.upn,
+        },
+      ],
+      generateId: () => 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+    })
+    expect(plan.relations).toEqual([
+      {
+        tenant_id: tenantId,
+        from_identity_id: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+        to_identity_id: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
+        relation_type: 'sponsors',
+      },
+    ])
+    expect(plan.identities[0].owner_identity_id).toBe('dddddddd-dddd-dddd-dddd-dddddddddddd')
+  })
+
+  it('matches a sponsor by UPN when sponsor_ms_object_id is absent', () => {
+    const pat = CONTOSO_INTERNAL_USERS[0]!
+    const plan = planGuestInventory({
+      tenantId,
+      now,
+      incoming: [
+        incoming({
+          ms_object_id: 'oid-upn-only',
+          display_name: 'UPN Sponsor Guest',
+          sponsor_ms_object_id: null,
+          sponsor_email: pat.upn,
+        }),
+      ],
+      existing: [],
+      internals: [
+        {
+          ms_object_id: pat.ms_object_id,
+          identity_id: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
+          email: pat.email,
+          upn: pat.upn,
+        },
+      ],
+      generateId: () => 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+    })
+    expect(plan.relations[0]?.to_identity_id).toBe('dddddddd-dddd-dddd-dddd-dddddddddddd')
+  })
+
   it('skips self even when the guest oid is also in internals', () => {
     const plan = planGuestInventory({
       tenantId,
