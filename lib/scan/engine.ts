@@ -379,10 +379,15 @@ export async function runScan(jobId: string, tenantId: string) {
           now,
           incoming,
           existing: (guestsAfterInternals ?? []) as { id: string; ms_object_id: string; identity_id: string | null; removed_at: string | null }[],
-          internals: internalPlan.accounts.map((account) => ({
-            ms_object_id: account.source_object_id,
-            identity_id: account.identity_id,
-          })),
+          internals: internalPlan.accounts.map((account) => {
+            const identity = internalPlan.identities.find((row) => row.id === account.identity_id)
+            return {
+              ms_object_id: account.source_object_id,
+              identity_id: account.identity_id,
+              email: identity?.primary_email ?? null,
+              upn: account.upn ?? null,
+            }
+          }),
         })
         await writeGuestInventory(inventory)
         summary.internal_users = internalPlan.identities.length

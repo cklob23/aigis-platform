@@ -5,6 +5,8 @@ import { generateFindings, rescoreTenant, snapshotMetrics } from '@/lib/scan/eng
 import { classifyExternalIdentity } from '@/lib/identity/classify'
 import { hubRowsFromGuest, type GuestHubSource } from '@/lib/identity/provision'
 import { planInternalInventory } from '@/lib/identity/ingest'
+import { planPrivilegedInventory } from '@/lib/privileged/ingest'
+import { DEMO_ROLE_ASSIGNMENTS, DEMO_ROLE_DEFINITIONS } from '@/lib/demo/privileged-roles'
 import { withIdentityId, withMembershipIds } from '@/lib/identity/governance'
 import { loadGovernanceMaps } from '@/lib/identity/governance-maps'
 import { DEFAULT_AI_SETTINGS, type DomainClassification, type RelationshipType, type ResourceType } from '@/lib/types'
@@ -281,6 +283,33 @@ async function seedDemoTenant() {
     mail: user.email,
   }))
   const internalIdByOid = new Map(internalPlan.accounts.map((account) => [account.source_object_id, account.identity_id]))
+  const privilegedPlan = planPrivilegedInventory({
+    tenantId,
+    now: daysAgo(0.2),
+    definitions: DEMO_ROLE_DEFINITIONS,
+    assignments: DEMO_ROLE_ASSIGNMENTS,
+    existingRoles: [],
+    existingAssignments: [],
+    principalByMsObjectId: internalIdByOid,
+    internalIdentityIds: internalPlan.identities.map((identity) => identity.id),
+  })
+  mustWrite(
+    'directory_roles insert',
+    await supabase.from('directory_roles').insert(privilegedPlan.roles.map((role) => ({ ...role, first_seen_at: daysAgo(95) }))),
+  )
+  mustWrite(
+    'role_assignments insert',
+    await supabase.from('role_assignments').insert(privilegedPlan.assignments.map((row) => ({ ...row, first_seen_at: daysAgo(95) }))),
+  )
+  for (const patch of privilegedPlan.identityPatches) {
+    mustWrite(
+      'identities privilege flags',
+      await supabase
+        .from('identities')
+        .update({ is_privileged: patch.is_privileged, privilege_tier: patch.privilege_tier })
+        .eq('id', patch.id),
+    )
+  }
   const { data: resourceRows } = mustWrite(
     'resources insert',
     await supabase
@@ -660,6 +689,7 @@ async function seedDemoTenant() {
     { action: 'review.created', target_type: 'access_review', target_label: 'Q2 Finance & HR guest review', created_at: daysAgo(5) },
     { action: 'review.decided', target_type: 'review_item', target_label: 'Approve · 3 guests', created_at: daysAgo(3) },
     { action: 'remediation.executed', target_type: 'guest', target_label: 'tallgrassaudit.com · 4 guests removed', new_state: { removed: 4 }, reason: 'Audit engagement ended', created_at: daysAgo(2) },
+    { action: 'privileged.inventory_synced', target_type: 'tenant', target_label: 'Northwind Health', new_state: privilegedPlan.auditState, created_at: daysAgo(0.2) },
     { action: 'scan.completed', target_type: 'scan_job', target_label: 'Scheduled scan', new_state: base, created_at: daysAgo(0.2) },
   ].map((a) => ({ tenant_id: tenantId, actor_user_id: demoUser.id, actor_email: a.action.startsWith('scan.completed') ? 'system' : demoUser.email, source_ip: '203.0.113.42', ...a }))
   mustWrite('audit_events insert', await supabase.from('audit_events').insert(auditRows))

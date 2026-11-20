@@ -55,6 +55,12 @@ describe('privilegedStageEnabled', () => {
     expect(privilegedStageEnabled({ privileged: { enabled: false, capability: { pim: 'available', pim_groups: 'available', sign_in_activity: true, auth_methods: true, license_hint: 'p2', checked_at: '2026-11-19T12:00:00.000Z', scan_job_id: null } } })).toBe(false)
     expect(privilegedStageEnabled({})).toBe(false)
   })
+
+  it('treats a missing or null capability as not ready even when enabled is true', () => {
+    expect(privilegedStageEnabled({ privileged: { enabled: true } })).toBe(false)
+    expect(privilegedStageEnabled({ privileged: { enabled: true, capability: null } })).toBe(false)
+    expect(privilegedStageEnabled({ privileged: { enabled: true, capability: { pim: 'available' } } })).toBe(false)
+  })
 })
 
 describe('shouldProbePrivilegedCapability', () => {
@@ -209,5 +215,21 @@ describe('privileged module isolation', () => {
     expect(src).toMatch(/privilegedStageEnabled/)
     expect(src).toMatch(/runPrivilegedStage/)
     expect(src).toMatch(/Inventorying internal users/)
+  })
+
+  it('keeps privileged Graph helpers GET-only', () => {
+    const src = readFileSync(path.join(root, 'lib/graph/privileged.ts'), 'utf8')
+    expect(src).toMatch(/g\.getAll/)
+    expect(src).not.toMatch(/\b(post|patch|delete)\s*\(/i)
+    expect(src).not.toMatch(/roleManagement\/directory\/roleDefinitions.*\$filter/)
+  })
+
+  it('inventories roles only from the flag-gated privileged stage', () => {
+    const engine = readFileSync(path.join(root, 'lib/scan/engine.ts'), 'utf8')
+    const stage = readFileSync(path.join(root, 'lib/scan/privileged.ts'), 'utf8')
+    expect(engine).toMatch(/if \(privilegedOn\)/)
+    expect(stage).toMatch(/planPrivilegedInventory/)
+    expect(stage).toMatch(/privileged\.inventory_synced/)
+    expect(engine).not.toMatch(/planPrivilegedInventory/)
   })
 })

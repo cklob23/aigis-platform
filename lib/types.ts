@@ -151,6 +151,40 @@ export type Identity = {
   owner_ms_object_id: string | null
   owner_display_name: string | null
   last_activity_at: string | null
+  is_privileged: boolean
+  privilege_tier: 0 | 1 | 2 | null
+  first_seen_at: string
+  last_seen_at: string
+  removed_at: string | null
+}
+
+export type DirectoryRole = {
+  id: string
+  tenant_id: string
+  ms_role_id: string
+  template_id: string | null
+  display_name: string
+  description: string | null
+  is_built_in: boolean
+  ms_is_privileged: boolean
+  is_privileged: boolean
+  privilege_tier: 0 | 1 | 2 | null
+  tier_rule: 't0_fixed' | 't2_reader' | 'default_t1' | 'custom_default' | 'excluded'
+  tier_map_version: string
+  first_seen_at: string
+  last_seen_at: string
+  removed_at: string | null
+}
+
+export type RoleAssignment = {
+  id: string
+  tenant_id: string
+  ms_assignment_id: string
+  directory_role_id: string
+  principal_identity_id: string | null
+  principal_ms_object_id: string
+  directory_scope_id: string
+  assignment_type: 'active' | 'eligible'
   first_seen_at: string
   last_seen_at: string
   removed_at: string | null
