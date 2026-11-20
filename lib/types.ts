@@ -99,7 +99,7 @@ export type ExternalDomain = {
 // External Identity Governance abstractions (Phase 1)
 // ---------------------------------------------------------------------------
 
-/** Top-level identity taxonomy. Only `external` is populated today; the others reserve the model for later phases. */
+/** Top-level identity taxonomy. `external` is always populated; `human_internal` is scoped role holders, guest sponsors, and role-holder managers when the privileged module is on. */
 export type IdentityClass = 'human_internal' | 'external' | 'privileged' | 'non_human' | 'agent'
 export type IdentityStatus = 'active' | 'disabled' | 'removed'
 export type IdentityOwnerKind = 'sponsor' | 'assigned' | 'inferred' | 'none'
@@ -127,9 +127,11 @@ export type PrivilegedCapability = {
 export type PrivilegedSettings = {
   enabled: boolean
   capability: PrivilegedCapability | null
+  /** App-only roles cached on enable/recheck. Settings page does not call Graph on every load. */
+  granted_permissions: string[]
 }
 
-export const DEFAULT_PRIVILEGED_SETTINGS: PrivilegedSettings = { enabled: false, capability: null }
+export const DEFAULT_PRIVILEGED_SETTINGS: PrivilegedSettings = { enabled: false, capability: null, granted_permissions: [] }
 
 export type Identity = {
   id: string

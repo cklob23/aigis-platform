@@ -22,8 +22,11 @@ export default async function GeneralSettingsPage({ searchParams }: { searchPara
   const notifications = (tenant.settings.notifications as { email?: boolean; weekly_digest?: boolean }) ?? {}
   const canManage = can(session.role, 'settings.manage')
   const liveTenant = !tenant.is_demo && microsoftConfigured()
-  const roles = canManage && liveTenant ? await getAppOnlyRoles(tenant.ms_tenant_id, consent === 'granted').catch(() => []) : []
   const privileged = parsePrivilegedSettings(tenant.settings)
+  const roles =
+    canManage && liveTenant && consent === 'granted'
+      ? await getAppOnlyRoles(tenant.ms_tenant_id, true).catch(() => privileged.granted_permissions)
+      : privileged.granted_permissions
 
   return (
     <>

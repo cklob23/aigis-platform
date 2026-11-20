@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { asExternalGuest, planGuestInventory, type IncomingExternalGuest } from '@/lib/identity/ingest'
+import { asExternalGuest, planGuestInventory, planInternalInventory, type IncomingExternalGuest } from '@/lib/identity/ingest'
+import { CONTOSO_INTERNAL_USERS } from '@/lib/demo/internal-users'
 import type { Guest } from '@/lib/types'
 
 const tenantId = '00000000-0000-0000-0000-000000000010'
@@ -168,6 +169,58 @@ describe('planGuestInventory sponsor relations', () => {
     expect(c?.owner_ms_object_id).toBe('internal-oid')
   })
 
+  it('resolves a sponsor to an inventoried internal user and keeps owner_email', () => {
+    const pat = CONTOSO_INTERNAL_USERS[0]!
+    const plan = planGuestInventory({
+      tenantId,
+      now,
+      incoming: [
+        incoming({
+          ms_object_id: 'oid-c',
+          display_name: 'C',
+          sponsor_ms_object_id: pat.ms_object_id,
+          sponsor_email: pat.email,
+          sponsor_display_name: pat.display_name,
+        }),
+      ],
+      existing: [],
+      internals: [{ ms_object_id: pat.ms_object_id, identity_id: 'dddddddd-dddd-dddd-dddd-dddddddddddd' }],
+      generateId: () => 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+    })
+    expect(plan.relations).toEqual([
+      {
+        tenant_id: tenantId,
+        from_identity_id: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+        to_identity_id: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
+        relation_type: 'sponsors',
+      },
+    ])
+    expect(plan.identities[0].owner_identity_id).toBe('dddddddd-dddd-dddd-dddd-dddddddddddd')
+    expect(plan.identities[0].owner_email).toBe(pat.email)
+    expect(plan.identities[0].identity_class).toBe('external')
+  })
+
+  it('skips self even when the guest oid is also in internals', () => {
+    const plan = planGuestInventory({
+      tenantId,
+      now,
+      incoming: [
+        incoming({
+          ms_object_id: 'oid-self',
+          display_name: 'Self',
+          sponsor_ms_object_id: 'oid-self',
+          sponsor_email: 'self@ex.example',
+        }),
+      ],
+      existing: [],
+      internals: [{ ms_object_id: 'oid-self', identity_id: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee' }],
+      generateId: () => 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+    })
+    expect(plan.relations).toEqual([])
+    expect(plan.identities[0].owner_identity_id).toBeNull()
+    expect(plan.identities[0].owner_email).toBe('self@ex.example')
+  })
+
   it('clears owner_identity_id on rescan when the sponsor is no longer inventoried', () => {
     const plan = planGuestInventory({
       tenantId,
@@ -185,6 +238,36 @@ describe('planGuestInventory sponsor relations', () => {
     expect(plan.relations).toEqual([])
     expect(plan.identities[0].owner_kind).toBe('sponsor')
     expect(plan.identities[0].owner_identity_id).toBeNull()
+    expect(plan.identities[0].owner_email).toBe('pat@contoso.example')
+  })
+})
+
+describe('planInternalInventory', () => {
+  it('inventories a Contoso role holder as human_internal and skips guests', () => {
+    const adele = CONTOSO_INTERNAL_USERS[1]!
+    const plan = planInternalInventory({
+      tenantId,
+      now,
+      incoming: [
+        { ...adele, is_role_holder: true },
+        {
+          ms_object_id: 'guest-oid',
+          display_name: 'Guest',
+          email: 'g@ex.example',
+          upn: 'g@ex.example',
+          account_enabled: true,
+          user_type: 'Guest',
+          is_sponsor: true,
+        },
+      ],
+      existing: [],
+      generateId: () => 'ffffffff-ffff-ffff-ffff-ffffffffffff',
+    })
+    expect(plan.identities).toHaveLength(1)
+    expect(plan.identities[0].identity_class).toBe('human_internal')
+    expect(plan.accounts[0].account_kind).toBe('user')
+    expect(plan.accounts[0].attrs.dedicatedAdmin).toBe(true)
+    expect(plan.accounts[0].source_object_id).toBe(adele.ms_object_id)
   })
 })
 

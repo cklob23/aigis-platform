@@ -2,7 +2,8 @@ import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { planGuestInventory, type IncomingExternalGuest } from '@/lib/identity/ingest'
+import { planGuestInventory, planInternalInventory, type IncomingExternalGuest } from '@/lib/identity/ingest'
+import { CONTOSO_INTERNAL_USERS } from '@/lib/demo/internal-users'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const DB = process.env.AIGIS_PR2_TEST_DB ?? 'aigis_pr2_test'
@@ -202,7 +203,125 @@ describe('dual-write ingest against local postgres', () => {
     expect(scalar(`select risk_score from identities where id = '00000000-0000-0000-0000-000000000101'`)).toBe('42')
     expect(scalar(`select risk_level from identities where id = '00000000-0000-0000-0000-000000000101'`)).toBe('high')
     expect(scalar(`select count(*) from guest_identities where removed_at is null`)).toBe(
-      scalar(`select count(*) from identities where removed_at is null`),
+      scalar(`select count(*) from identities where identity_class = 'external' and removed_at is null`),
     )
+  })
+
+  it('writes a sponsor relation to an inventoried internal user and leaves identities_legacy_view on guests', () => {
+    const pat = CONTOSO_INTERNAL_USERS[0]!
+    const patId = '00000000-0000-0000-0000-000000000201'
+    const guestId = '00000000-0000-0000-0000-000000000105'
+    const legacyBefore = scalar('select count(*) from identities_legacy_view')
+    const guestBefore = scalar('select count(*) from guest_identities')
+    const internal = planInternalInventory({
+      tenantId,
+      now,
+      incoming: [{ ...pat, is_sponsor: true, is_manager: true }],
+      existing: [],
+      generateId: () => patId,
+    })
+    const identity = internal.identities[0]!
+    const account = internal.accounts[0]!
+    psql([
+      '-c',
+      `insert into identities (id, tenant_id, identity_class, display_name, primary_email, status, owner_kind, last_seen_at)
+       values (${lit(identity.id)}, ${lit(identity.tenant_id)}, ${lit(identity.identity_class)}, ${lit(identity.display_name)}, ${lit(identity.primary_email)}, ${lit(identity.status)}, ${lit(identity.owner_kind)}, ${lit(now)})`,
+    ])
+    psql([
+      '-c',
+      `insert into identity_accounts (identity_id, tenant_id, source, source_object_id, account_kind, upn, enabled, last_seen_at, attrs)
+       values (${lit(account.identity_id)}, ${lit(account.tenant_id)}, ${lit(account.source)}, ${lit(account.source_object_id)}, ${lit(account.account_kind)}, ${lit(account.upn)}, ${lit(account.enabled)}, ${lit(now)}, ${lit(account.attrs)})`,
+    ])
+    expect(scalar('select count(*) from identities_legacy_view')).toBe(legacyBefore)
+    expect(scalar('select count(*) from guest_identities')).toBe(guestBefore)
+
+    const plan = planGuestInventory({
+      tenantId,
+      now,
+      incoming: [
+        incoming({
+          ms_object_id: 'oid-1',
+          display_name: 'Guest One',
+          email: 'one@partner.example',
+          sponsor_ms_object_id: pat.ms_object_id,
+          sponsor_email: pat.email,
+          sponsor_display_name: pat.display_name,
+        }),
+        incoming({
+          ms_object_id: 'oid-4',
+          display_name: 'Guest Four',
+          email: 'four@ex.example',
+        }),
+        incoming({
+          ms_object_id: 'oid-5',
+          display_name: 'Guest Five',
+          email: 'five@ex.example',
+          sponsor_ms_object_id: pat.ms_object_id,
+          sponsor_email: pat.email,
+          sponsor_display_name: pat.display_name,
+        }),
+      ],
+      existing: [
+        { id: '00000000-0000-0000-0000-000000000101', ms_object_id: 'oid-1', identity_id: '00000000-0000-0000-0000-000000000101', removed_at: null },
+        { id: '00000000-0000-0000-0000-000000000102', ms_object_id: 'oid-2', identity_id: '00000000-0000-0000-0000-000000000102', removed_at: now },
+        { id: '00000000-0000-0000-0000-000000000103', ms_object_id: 'oid-3', identity_id: '00000000-0000-0000-0000-000000000103', removed_at: scalar(`select removed_at::text from guest_identities where ms_object_id = 'oid-3'`) },
+        { id: '00000000-0000-0000-0000-000000000104', ms_object_id: 'oid-4', identity_id: '00000000-0000-0000-0000-000000000104', removed_at: null },
+      ],
+      internals: [{ ms_object_id: pat.ms_object_id, identity_id: patId }],
+      generateId: () => guestId,
+    })
+
+    expect(plan.relations.some((rel) => rel.to_identity_id === patId)).toBe(true)
+    expect(plan.identities.find((row) => row.id === guestId)?.owner_identity_id).toBe(patId)
+    expect(plan.identities.find((row) => row.id === '00000000-0000-0000-0000-000000000101')?.owner_identity_id).toBe(patId)
+
+    for (const row of plan.identities) {
+      psql([
+        '-c',
+        `insert into identities (id, tenant_id, identity_class, display_name, primary_email, status, owner_kind, owner_identity_id, owner_email, owner_ms_object_id, owner_display_name, last_activity_at, last_seen_at, removed_at)
+         values (${lit(row.id)}, ${lit(row.tenant_id)}, ${lit(row.identity_class)}, ${lit(row.display_name)}, ${lit(row.primary_email)}, ${lit(row.status)}, ${lit(row.owner_kind)}, ${lit(row.owner_identity_id)}, ${lit(row.owner_email)}, ${lit(row.owner_ms_object_id)}, ${lit(row.owner_display_name)}, ${lit(row.last_activity_at)}, ${lit(row.last_seen_at)}, ${lit(row.removed_at)})
+         on conflict (id) do update set
+           owner_kind = excluded.owner_kind,
+           owner_identity_id = excluded.owner_identity_id,
+           owner_email = excluded.owner_email,
+           owner_ms_object_id = excluded.owner_ms_object_id,
+           last_seen_at = excluded.last_seen_at`,
+      ])
+    }
+    for (const account of plan.accounts) {
+      psql([
+        '-c',
+        `insert into identity_accounts (identity_id, tenant_id, source, source_object_id, account_kind, upn, enabled, last_activity_at, last_seen_at, removed_at)
+         values (${lit(account.identity_id)}, ${lit(account.tenant_id)}, ${lit(account.source)}, ${lit(account.source_object_id)}, ${lit(account.account_kind)}, ${lit(account.upn)}, ${lit(account.enabled)}, ${lit(account.last_activity_at)}, ${lit(account.last_seen_at)}, ${lit(account.removed_at)})
+         on conflict (tenant_id, source, source_object_id) do update set
+           identity_id = excluded.identity_id,
+           last_seen_at = excluded.last_seen_at`,
+      ])
+    }
+    for (const guest of plan.guests) {
+      psql([
+        '-c',
+        `insert into guest_identities (id, tenant_id, identity_id, ms_object_id, display_name, email, upn, user_type, identity_class, account_enabled, last_seen_at, removed_at)
+         values (${lit(guest.id)}, ${lit(guest.tenant_id)}, ${lit(guest.identity_id)}, ${lit(guest.ms_object_id)}, ${lit(guest.display_name)}, ${lit(guest.email)}, ${lit(guest.upn)}, ${lit(guest.user_type)}, ${lit(guest.identity_class)}, ${lit(guest.account_enabled)}, ${lit(guest.last_seen_at)}, ${lit(guest.removed_at)})
+         on conflict (tenant_id, ms_object_id) do update set
+           identity_id = excluded.identity_id,
+           last_seen_at = excluded.last_seen_at`,
+      ])
+    }
+    psql(['-c', `delete from identity_relations where tenant_id = ${lit(tenantId)} and relation_type = 'sponsors'`])
+    for (const rel of plan.relations) {
+      psql([
+        '-c',
+        `insert into identity_relations (tenant_id, from_identity_id, to_identity_id, relation_type)
+         values (${lit(rel.tenant_id)}, ${lit(rel.from_identity_id)}, ${lit(rel.to_identity_id)}, ${lit(rel.relation_type)})
+         on conflict (tenant_id, from_identity_id, to_identity_id, relation_type) do nothing`,
+      ])
+    }
+
+    expect(scalar(`select owner_identity_id from identities where id = '${guestId}'`)).toBe(patId)
+    expect(scalar(`select count(*) from identity_relations where to_identity_id = '${patId}' and relation_type = 'sponsors'`)).not.toBe('0')
+    expect(scalar('select count(*) from identities_legacy_view')).toBe(scalar('select count(*) from guest_identities'))
+    expect(scalar('select count(*) from identities_legacy_view')).not.toBe(scalar('select count(*) from identities'))
+    apply('supabase/sql/0004_postcheck.sql')
   })
 })

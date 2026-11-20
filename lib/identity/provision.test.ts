@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { hubRowsFromGuest, identityStatusFromGuest, ownerKindFromSponsor } from '@/lib/identity/provision'
+import { hubRowsFromGuest, hubRowsFromUser, identityStatusFromGuest, isDedicatedAdminAccount, ownerKindFromSponsor } from '@/lib/identity/provision'
+import { CONTOSO_INTERNAL_USERS } from '@/lib/demo/internal-users'
 
 const baseGuest = {
   id: '11111111-1111-1111-1111-111111111111',
@@ -53,5 +54,85 @@ describe('hubRowsFromGuest', () => {
     expect(account.source).toBe('entra')
     expect(account.source_object_id).toBe('entra-oid-1')
     expect(account.account_kind).toBe('guest')
+  })
+})
+
+describe('hubRowsFromUser', () => {
+  it('builds a human_internal hub and entra user account', () => {
+    const pat = CONTOSO_INTERNAL_USERS[0]!
+    const { identity, account } = hubRowsFromUser({
+      id: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
+      tenant_id: baseGuest.tenant_id,
+      ms_object_id: pat.ms_object_id,
+      display_name: pat.display_name,
+      email: pat.email,
+      upn: pat.upn,
+      account_enabled: true,
+      last_seen_at: '2026-01-02T00:00:00.000Z',
+      dedicated_admin: false,
+      inventory_reasons: ['sponsor', 'manager'],
+    })
+    expect(identity.identity_class).toBe('human_internal')
+    expect(identity.owner_identity_id).toBeNull()
+    expect(account.account_kind).toBe('user')
+    expect(account.source_object_id).toBe(pat.ms_object_id)
+    expect(account.attrs.dedicatedAdmin).toBe(false)
+  })
+})
+
+describe('dedicated admin rule', () => {
+  it('flags a cloud-only role holder with an admin name', () => {
+    const adele = CONTOSO_INTERNAL_USERS[1]!
+    expect(
+      isDedicatedAdminAccount({
+        holdsDirectoryRole: true,
+        onPremisesSyncEnabled: adele.on_premises_sync_enabled,
+        displayName: adele.display_name,
+        userPrincipalName: adele.upn,
+        assignedPlans: adele.assigned_plans,
+      }),
+    ).toBe(true)
+  })
+
+  it('does not flag a synced role holder or a cloud-only user without a role', () => {
+    expect(
+      isDedicatedAdminAccount({
+        holdsDirectoryRole: true,
+        onPremisesSyncEnabled: true,
+        displayName: 'Adele Admin',
+        userPrincipalName: 'adele.admin@contoso.example',
+        assignedPlans: [],
+      }),
+    ).toBe(false)
+    expect(
+      isDedicatedAdminAccount({
+        holdsDirectoryRole: false,
+        onPremisesSyncEnabled: false,
+        displayName: 'Adele Admin',
+        userPrincipalName: 'adele.admin@contoso.example',
+        assignedPlans: [],
+      }),
+    ).toBe(false)
+  })
+
+  it('flags a cloud-only role holder with no enabled assigned plans', () => {
+    expect(
+      isDedicatedAdminAccount({
+        holdsDirectoryRole: true,
+        onPremisesSyncEnabled: false,
+        displayName: 'Megan Bowen',
+        userPrincipalName: 'megan.bowen@contoso.example',
+        assignedPlans: [],
+      }),
+    ).toBe(true)
+    expect(
+      isDedicatedAdminAccount({
+        holdsDirectoryRole: true,
+        onPremisesSyncEnabled: false,
+        displayName: 'Megan Bowen',
+        userPrincipalName: 'megan.bowen@contoso.example',
+        assignedPlans: [{ capabilityStatus: 'Enabled' }],
+      }),
+    ).toBe(false)
   })
 })

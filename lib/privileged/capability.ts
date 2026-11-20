@@ -30,17 +30,39 @@ export function parsePrivilegedSettings(settings: Record<string, unknown> | null
   return {
     enabled: raw.enabled === true,
     capability: parseCapability(raw.capability),
+    granted_permissions: parseGrantedPermissions(raw.granted_permissions),
   }
 }
 
 export function mergePrivilegedSettings(
   settings: Record<string, unknown>,
-  next: { enabled: boolean; capability: PrivilegedCapability | null },
+  next: { enabled: boolean; capability: PrivilegedCapability | null; granted_permissions?: string[] },
 ): Record<string, unknown> {
+  const prev = parsePrivilegedSettings(settings)
   return {
     ...settings,
-    privileged: { enabled: next.enabled, capability: next.capability },
+    privileged: {
+      enabled: next.enabled,
+      capability: next.capability,
+      granted_permissions: next.granted_permissions ?? prev.granted_permissions,
+    },
   }
+}
+
+function parseGrantedPermissions(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === 'string' && item.length > 0)
+}
+
+/** Live privileged scan stage. Strict enabled flag, and skip when directory PIM still needs consent. */
+export function privilegedStageEnabled(settings: Record<string, unknown> | null | undefined): boolean {
+  const parsed = parsePrivilegedSettings(settings)
+  return parsed.enabled === true && parsed.capability?.pim !== 'needs_consent'
+}
+
+/** Recheck probes Graph. Off and demo tenants must not. */
+export function shouldProbePrivilegedCapability(enabled: boolean, isDemo: boolean): boolean {
+  return enabled === true && !isDemo
 }
 
 function parseCapability(value: unknown): PrivilegedCapability | null {

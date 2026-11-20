@@ -1,0 +1,177 @@
+/** Contoso-shaped internal users used by the demo seed and PR 3 tests. */
+export type ContosoInternalUser = {
+  ms_object_id: string
+  display_name: string
+  email: string
+  upn: string
+  account_enabled: boolean
+  on_premises_sync_enabled: boolean | null
+  assigned_plans: { service?: string; capabilityStatus?: string }[]
+  is_role_holder: boolean
+  is_sponsor: boolean
+  is_manager: boolean
+}
+
+export const CONTOSO_INTERNAL_USERS: ContosoInternalUser[] = [
+  {
+    ms_object_id: '11111111-1111-1111-1111-111111111101',
+    display_name: 'Pat Sponsor',
+    email: 'pat@contoso.example',
+    upn: 'pat@contoso.example',
+    account_enabled: true,
+    on_premises_sync_enabled: true,
+    assigned_plans: [{ service: 'exchange', capabilityStatus: 'Enabled' }],
+    is_role_holder: false,
+    is_sponsor: true,
+    is_manager: true,
+  },
+  {
+    ms_object_id: '11111111-1111-1111-1111-111111111102',
+    display_name: 'Adele Admin',
+    email: 'adele.admin@contoso.example',
+    upn: 'adele.admin@contoso.example',
+    account_enabled: true,
+    on_premises_sync_enabled: false,
+    assigned_plans: [],
+    is_role_holder: true,
+    is_sponsor: false,
+    is_manager: false,
+  },
+  {
+    ms_object_id: '11111111-1111-1111-1111-111111111103',
+    display_name: 'Megan Bowen',
+    email: 'megan.bowen@contoso.example',
+    upn: 'megan.bowen@contoso.example',
+    account_enabled: true,
+    on_premises_sync_enabled: false,
+    assigned_plans: [{ service: 'exchange', capabilityStatus: 'Enabled' }],
+    is_role_holder: true,
+    is_sponsor: true,
+    is_manager: false,
+  },
+  {
+    ms_object_id: '11111111-1111-1111-1111-111111111104',
+    display_name: 'Alex Wilber',
+    email: 'alex.wilber@contoso.example',
+    upn: 'alex.wilber@contoso.example',
+    account_enabled: true,
+    on_premises_sync_enabled: true,
+    assigned_plans: [{ service: 'exchange', capabilityStatus: 'Enabled' }],
+    is_role_holder: false,
+    is_sponsor: true,
+    is_manager: false,
+  },
+  {
+    ms_object_id: '11111111-1111-1111-1111-111111111105',
+    display_name: 'Joni Sherman',
+    email: 'joni.sherman@contoso.example',
+    upn: 'joni.sherman@contoso.example',
+    account_enabled: false,
+    on_premises_sync_enabled: true,
+    assigned_plans: [{ service: 'exchange', capabilityStatus: 'Enabled' }],
+    is_role_holder: false,
+    is_sponsor: true,
+    is_manager: false,
+  },
+  {
+    ms_object_id: '11111111-1111-1111-1111-111111111106',
+    display_name: 'Allan Deyoung',
+    email: 'allan.deyoung@contoso.example',
+    upn: 'allan.deyoung@contoso.example',
+    account_enabled: true,
+    on_premises_sync_enabled: true,
+    assigned_plans: [{ service: 'exchange', capabilityStatus: 'Enabled' }],
+    is_role_holder: true,
+    is_sponsor: true,
+    is_manager: false,
+  },
+  {
+    ms_object_id: '11111111-1111-1111-1111-111111111107',
+    display_name: 'Isaiah Langer',
+    email: 'isaiah.langer@contoso.example',
+    upn: 'isaiah.langer@contoso.example',
+    account_enabled: true,
+    on_premises_sync_enabled: true,
+    assigned_plans: [{ service: 'exchange', capabilityStatus: 'Enabled' }],
+    is_role_holder: false,
+    is_sponsor: true,
+    is_manager: false,
+  },
+  {
+    ms_object_id: '11111111-1111-1111-1111-111111111108',
+    display_name: 'Lidia Holloway',
+    email: 'lidia.holloway@contoso.example',
+    upn: 'lidia.holloway@contoso.example',
+    account_enabled: true,
+    on_premises_sync_enabled: true,
+    assigned_plans: [{ service: 'exchange', capabilityStatus: 'Enabled' }],
+    is_role_holder: false,
+    is_sponsor: true,
+    is_manager: false,
+  },
+  {
+    ms_object_id: '11111111-1111-1111-1111-111111111109',
+    display_name: 'Nestor Wilke',
+    email: 'nestor.wilke@contoso.example',
+    upn: 'nestor.wilke@contoso.example',
+    account_enabled: true,
+    on_premises_sync_enabled: true,
+    assigned_plans: [{ service: 'exchange', capabilityStatus: 'Enabled' }],
+    is_role_holder: false,
+    is_sponsor: true,
+    is_manager: false,
+  },
+  {
+    ms_object_id: '11111111-1111-1111-1111-111111111110',
+    display_name: 'Patti Fernandez',
+    email: 'patti.fernandez@contoso.example',
+    upn: 'patti.fernandez@contoso.example',
+    account_enabled: false,
+    on_premises_sync_enabled: true,
+    assigned_plans: [{ service: 'exchange', capabilityStatus: 'Enabled' }],
+    is_role_holder: false,
+    is_sponsor: true,
+    is_manager: false,
+  },
+  {
+    ms_object_id: '11111111-1111-1111-1111-111111111111',
+    display_name: 'Pradeep Gupta',
+    email: 'pradeep.gupta@contoso.example',
+    upn: 'pradeep.gupta@contoso.example',
+    account_enabled: true,
+    on_premises_sync_enabled: true,
+    assigned_plans: [{ service: 'exchange', capabilityStatus: 'Enabled' }],
+    is_role_holder: false,
+    is_sponsor: true,
+    is_manager: false,
+  },
+  {
+    ms_object_id: '11111111-1111-1111-1111-111111111112',
+    display_name: 'Miriam Graham',
+    email: 'miriam.graham@contoso.example',
+    upn: 'miriam.graham@contoso.example',
+    account_enabled: true,
+    on_premises_sync_enabled: true,
+    assigned_plans: [{ service: 'exchange', capabilityStatus: 'Enabled' }],
+    is_role_holder: false,
+    is_sponsor: true,
+    is_manager: true,
+  },
+]
+
+export const DEMO_FEATURED_RESOLVED_GUEST = {
+  ms_object_id: 'demo-guest-featured-resolved',
+  display_name: 'Jordan Hale',
+  email: 'jordan.hale@meridianlaw.com',
+  domain: 'meridianlaw.com',
+}
+
+export const DEMO_FEATURED_UNRESOLVED_GUEST = {
+  ms_object_id: 'demo-guest-featured-unresolved',
+  display_name: 'Sam Ortiz',
+  email: 'sam.ortiz@nimbusdesign.studio',
+  domain: 'nimbusdesign.studio',
+  sponsor_ms_object_id: '99999999-9999-9999-9999-999999999999',
+  sponsor_display_name: 'Casey Unlisted',
+  sponsor_email: 'casey.unlisted@contoso.example',
+}

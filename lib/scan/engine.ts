@@ -18,7 +18,8 @@ import { computeIdentityRisk, identityRiskPatch, DEFAULT_RISK_POLICY, type RiskP
 import type { DomainClassification, ExternalDomain, Guest, RelationshipType, Resource, ResourceType } from '@/lib/types'
 import { audit } from '@/lib/audit'
 
-type Phase = 'organization' | 'guests' | 'groups' | 'memberships' | 'sites' | 'apps' | 'scoring' | 'diff'
+type Phase = 'organization' | 'guests' | 'privileged' | 'groups' | 'memberships' | 'sites' | 'apps' | 'scoring' | 'diff'
+/** Unchanged when the privileged flag is off so queued job progress stays byte-for-byte the same. */
 const PHASES: Phase[] = ['organization', 'guests', 'groups', 'memberships', 'sites', 'apps', 'scoring', 'diff']
 
 function chunk<T>(arr: T[], size: number) {
@@ -31,6 +32,8 @@ import { classifyExternalIdentity, defaultOrganizationName } from '@/lib/identit
 import { resolveCompany } from '@/lib/identity/company'
 import { planGuestInventory, type IncomingExternalGuest } from '@/lib/identity/ingest'
 import { writeGuestInventory } from '@/lib/identity/write-inventory'
+import { privilegedStageEnabled } from '@/lib/privileged/capability'
+import { runPrivilegedStage } from '@/lib/scan/privileged'
 import { requireIdentityId, withMembershipIds } from '@/lib/identity/governance'
 import { loadGovernanceMaps } from '@/lib/identity/governance-maps'
 import { evaluateAlertRules } from '@/lib/alerts/evaluate'
@@ -215,7 +218,9 @@ export async function runScan(jobId: string, tenantId: string) {
   const supabase = db()
   const { data: tenant } = await supabase.from('tenants').select('*').eq('id', tenantId).single()
   if (!tenant) throw new Error('Tenant not found')
+  const privilegedOn = privilegedStageEnabled(tenant.settings as Record<string, unknown>)
   const phases: Record<string, 'pending' | 'running' | 'done' | 'error'> = Object.fromEntries(PHASES.map((p) => [p, 'pending']))
+  if (privilegedOn) phases.privileged = 'pending'
   const progress = async (phase: Phase, percent: number, message: string, state: 'running' | 'done' = 'running') => {
     phases[phase] = state
     await setProgress(jobId, { phase, percent, message, phases })
@@ -347,11 +352,12 @@ export async function runScan(jobId: string, tenantId: string) {
         }
       })
       const { data: existingGuests } = await supabase.from('guest_identities').select('id,ms_object_id,identity_id,removed_at').eq('tenant_id', tenantId)
-      const inventory = planGuestInventory({
+      const existingGuestRows = (existingGuests ?? []) as { id: string; ms_object_id: string; identity_id: string | null; removed_at: string | null }[]
+      let inventory = planGuestInventory({
         tenantId,
         now,
         incoming,
-        existing: (existingGuests ?? []) as { id: string; ms_object_id: string; identity_id: string | null; removed_at: string | null }[],
+        existing: existingGuestRows,
       })
       await writeGuestInventory(inventory)
       summary.new_guests = inventory.newCount
@@ -360,6 +366,31 @@ export async function runScan(jobId: string, tenantId: string) {
       summary.identity_accounts = inventory.accounts.length
       summary.identity_relations = inventory.relations.length
       await progress('guests', 28, `${graphGuests.length} guests inventoried`, 'done')
+
+      if (privilegedOn) {
+        await progress('privileged', 29, 'Inventorying internal users…')
+        const internalPlan = await runPrivilegedStage(jobId, tenantId, g)
+        const { data: guestsAfterInternals } = await supabase
+          .from('guest_identities')
+          .select('id,ms_object_id,identity_id,removed_at')
+          .eq('tenant_id', tenantId)
+        inventory = planGuestInventory({
+          tenantId,
+          now,
+          incoming,
+          existing: (guestsAfterInternals ?? []) as { id: string; ms_object_id: string; identity_id: string | null; removed_at: string | null }[],
+          internals: internalPlan.accounts.map((account) => ({
+            ms_object_id: account.source_object_id,
+            identity_id: account.identity_id,
+          })),
+        })
+        await writeGuestInventory(inventory)
+        summary.internal_users = internalPlan.identities.length
+        summary.identities = inventory.identities.length + internalPlan.identities.length
+        summary.identity_accounts = inventory.accounts.length + internalPlan.accounts.length
+        summary.identity_relations = inventory.relations.length
+        await progress('privileged', 30, `${internalPlan.identities.length} internal users inventoried`, 'done')
+      }
 
       const guestIdByMs = new Map(inventory.guests.map((r) => [r.ms_object_id, r.id]))
       const membershipMaps = await loadGovernanceMaps(tenantId, inventory.guests)

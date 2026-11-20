@@ -4,9 +4,16 @@ import { detectSensitivity } from '@/lib/risk/sensitivity'
 import { generateFindings, rescoreTenant, snapshotMetrics } from '@/lib/scan/engine'
 import { classifyExternalIdentity } from '@/lib/identity/classify'
 import { hubRowsFromGuest, type GuestHubSource } from '@/lib/identity/provision'
+import { planInternalInventory } from '@/lib/identity/ingest'
 import { withIdentityId, withMembershipIds } from '@/lib/identity/governance'
 import { loadGovernanceMaps } from '@/lib/identity/governance-maps'
 import { DEFAULT_AI_SETTINGS, type DomainClassification, type RelationshipType, type ResourceType } from '@/lib/types'
+import { PRIVILEGED_READ_PERMISSIONS } from '@/lib/graph/permissions'
+import {
+  CONTOSO_INTERNAL_USERS,
+  DEMO_FEATURED_RESOLVED_GUEST,
+  DEMO_FEATURED_UNRESOLVED_GUEST,
+} from '@/lib/demo/internal-users'
 import { mustWrite } from '@/lib/supabase/write'
 
 export const DEMO_MS_TENANT_ID = 'demo-northwind-health'
@@ -160,7 +167,25 @@ async function seedDemoTenant() {
       onboarding_completed_at: daysAgo(95),
       last_scan_at: daysAgo(0.2),
       is_demo: true,
-      settings: { risk_policy: { inactiveDays: 90, staleDays: 180, reviewDays: 365 }, scan_schedule: 'daily', notifications: { email: true, weekly_digest: true }, ai: DEFAULT_AI_SETTINGS },
+      settings: {
+        risk_policy: { inactiveDays: 90, staleDays: 180, reviewDays: 365 },
+        scan_schedule: 'daily',
+        notifications: { email: true, weekly_digest: true },
+        ai: DEFAULT_AI_SETTINGS,
+        privileged: {
+          enabled: true,
+          capability: {
+            pim: 'available',
+            pim_groups: 'available',
+            sign_in_activity: true,
+            auth_methods: true,
+            license_hint: 'p2',
+            checked_at: daysAgo(0.2),
+            scan_job_id: null,
+          },
+          granted_permissions: [...PRIVILEGED_READ_PERMISSIONS],
+        },
+      },
     })
     .select('id')
     .single(),
@@ -239,7 +264,23 @@ async function seedDemoTenant() {
     }
   }
 
-  const internalOwners = Array.from({ length: 12 }, (_, i) => ({ id: `owner-${i}`, displayName: `${FIRST[(i * 7) % FIRST.length]} ${LAST[(i * 11) % LAST.length]}`, mail: `${FIRST[(i * 7) % FIRST.length].toLowerCase()}.${LAST[(i * 11) % LAST.length].toLowerCase()}@northwindhealth.com` }))
+  const internalPlan = planInternalInventory({
+    tenantId,
+    now: daysAgo(0.2),
+    incoming: CONTOSO_INTERNAL_USERS,
+    existing: [],
+  })
+  mustWrite('identities insert internals', await supabase.from('identities').insert(internalPlan.identities.map((identity) => ({ ...identity, first_seen_at: daysAgo(95) }))))
+  mustWrite(
+    'identity_accounts insert internals',
+    await supabase.from('identity_accounts').insert(internalPlan.accounts.map((account) => ({ ...account, first_seen_at: daysAgo(95) }))),
+  )
+  const internalOwners = CONTOSO_INTERNAL_USERS.map((user) => ({
+    id: user.ms_object_id,
+    displayName: user.display_name,
+    mail: user.email,
+  }))
+  const internalIdByOid = new Map(internalPlan.accounts.map((account) => [account.source_object_id, account.identity_id]))
   const { data: resourceRows } = mustWrite(
     'resources insert',
     await supabase
@@ -290,7 +331,12 @@ async function seedDemoTenant() {
   )
   const siteByGroup = new Map((siteRows ?? []).map((s) => [s.linked_resource_id as string, s.id as string]))
 
-  const sponsors = internalOwners.map((o, i) => ({ ...o, enabled: i !== 3 && i !== 9 }))
+  const sponsors = CONTOSO_INTERNAL_USERS.map((user) => ({
+    id: user.ms_object_id,
+    displayName: user.display_name,
+    mail: user.email,
+    enabled: user.account_enabled,
+  }))
   const guestCount = 186
   const guests: Record<string, unknown>[] = []
   const guestPlans: { domain: string; sensitiveBias: number; count: number }[] = []
@@ -363,6 +409,72 @@ async function seedDemoTenant() {
       last_seen_at: daysAgo(0.2),
     })
   }
+
+  const pat = CONTOSO_INTERNAL_USERS[0]!
+  const featured = [
+    {
+      ...DEMO_FEATURED_RESOLVED_GUEST,
+      sponsor: { id: pat.ms_object_id, displayName: pat.display_name, mail: pat.email, enabled: pat.account_enabled },
+    },
+    {
+      ...DEMO_FEATURED_UNRESOLVED_GUEST,
+      sponsor: {
+        id: DEMO_FEATURED_UNRESOLVED_GUEST.sponsor_ms_object_id,
+        displayName: DEMO_FEATURED_UNRESOLVED_GUEST.sponsor_display_name,
+        mail: DEMO_FEATURED_UNRESOLVED_GUEST.sponsor_email,
+        enabled: true,
+      },
+    },
+  ]
+  for (const item of featured) {
+    const id = crypto.randomUUID()
+    const org = orgByDomain.get(item.domain) ?? null
+    const upn = `${item.email.replace('@', '_')}#EXT#@northwind.onmicrosoft.com`
+    const classification = classifyExternalIdentity({
+      userType: 'Guest',
+      userPrincipalName: upn,
+      mail: item.email,
+      externalUserState: 'Accepted',
+      companyName: companyNameFor(item.domain),
+      jobTitle: null,
+      creationType: 'Invitation',
+      domain: item.domain,
+      tenantVerifiedDomains: ['northwindhealth.com', 'northwind.onmicrosoft.com'],
+      organizationRelationship: org?.relationship_type ?? null,
+    })
+    guests.push({
+      id,
+      identity_id: id,
+      tenant_id: tenantId,
+      ms_object_id: item.ms_object_id,
+      display_name: item.display_name,
+      email: item.email,
+      upn,
+      domain: item.domain,
+      external_domain_id: domainById.get(item.domain)?.id ?? null,
+      external_organization_id: org?.id ?? null,
+      identity_class: 'external',
+      external_type: classification.external_type,
+      classification_evidence: classification.evidence,
+      company_name: companyNameFor(item.domain),
+      account_enabled: true,
+      invitation_status: 'Accepted',
+      created_at_ms: daysAgo(40),
+      last_sign_in_at: daysAgo(3),
+      last_non_interactive_sign_in_at: daysAgo(2),
+      auth_methods: ['microsoftAuthenticatorAuthenticationMethod', 'passwordAuthenticationMethod'],
+      sponsor_ms_object_id: item.sponsor.id,
+      sponsor_display_name: item.sponsor.displayName,
+      sponsor_email: item.sponsor.mail,
+      sponsor_enabled: item.sponsor.enabled,
+      review_status: 'never_reviewed',
+      last_reviewed_at: null,
+      first_seen_at: daysAgo(40),
+      last_seen_at: daysAgo(0.2),
+    })
+    guestPlans.push({ domain: item.domain, sensitiveBias: 0.3, count: 2 })
+  }
+
   const hubs = guests.map((g) => hubRowsFromGuest(g as GuestHubSource))
   for (let i = 0; i < hubs.length; i += 100) {
     mustWrite('identities insert', await supabase.from('identities').insert(hubs.slice(i, i + 100).map((h) => h.identity)))
@@ -378,7 +490,33 @@ async function seedDemoTenant() {
     )
     insertedGuests.push(...((data ?? []) as { id: string; ms_object_id: string; identity_id: string }[]))
   }
-  insertedGuests.sort((a, b) => Number(a.ms_object_id.split('-').pop()) - Number(b.ms_object_id.split('-').pop()))
+  insertedGuests.sort((a, b) => {
+    const indexOf = (oid: string) => {
+      const n = Number(oid.replace('demo-guest-', ''))
+      return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER
+    }
+    const d = indexOf(a.ms_object_id) - indexOf(b.ms_object_id)
+    return d !== 0 ? d : a.ms_object_id.localeCompare(b.ms_object_id)
+  })
+
+  const sponsorRelations: { tenant_id: string; from_identity_id: string; to_identity_id: string; relation_type: 'sponsors' }[] = []
+  for (const guest of guests) {
+    const sponsorOid = guest.sponsor_ms_object_id as string | null
+    if (!sponsorOid) continue
+    const toId = internalIdByOid.get(sponsorOid)
+    const fromId = guest.identity_id as string
+    if (!toId || toId === fromId) continue
+    sponsorRelations.push({ tenant_id: tenantId, from_identity_id: fromId, to_identity_id: toId, relation_type: 'sponsors' })
+  }
+  if (sponsorRelations.length) {
+    mustWrite('identity_relations sponsors', await supabase.from('identity_relations').insert(sponsorRelations))
+    for (const rel of sponsorRelations) {
+      mustWrite(
+        'identities owner_identity_id',
+        await supabase.from('identities').update({ owner_identity_id: rel.to_identity_id }).eq('id', rel.from_identity_id),
+      )
+    }
+  }
 
   const maps = await loadGovernanceMaps(tenantId, insertedGuests)
   const sensitiveResources = resources.filter((x) => x.is_sensitive && x.resource_type !== 'sharepoint_site')

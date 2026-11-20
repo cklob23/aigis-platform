@@ -2,9 +2,13 @@
 -- commits. Not part of the supabase migration chain. Owner-run only.
 --
 -- Gates (RAISE EXCEPTION on failure):
---   identities count = guests
---   accounts = guests
+--   external identities = guests
+--   guest accounts = guests
+--   identities = guests + inventoried human_internal
+--   accounts = identities
+--   identities_legacy_view = guests (unchanged by internals)
 --   no null identity_id
+--   no human_internal stubs (internals without an entra user account)
 --   unique keys hold
 
 do $$
@@ -29,6 +33,9 @@ declare
   guest_count bigint;
   identity_count bigint;
   account_count bigint;
+  external_count bigint;
+  guest_account_count bigint;
+  human_internal_count bigint;
   null_ids bigint;
   dup_accounts bigint;
   dup_guest_identity bigint;
@@ -39,6 +46,9 @@ begin
   select count(*) into guest_count from guest_identities;
   select count(*) into identity_count from identities;
   select count(*) into account_count from identity_accounts;
+  select count(*) into external_count from identities where identity_class = 'external';
+  select count(*) into guest_account_count from identity_accounts where source = 'entra' and account_kind = 'guest';
+  select count(*) into human_internal_count from identities where identity_class = 'human_internal';
   select count(*) into null_ids from guest_identities where identity_id is null;
   select count(*) into legacy_count from identities_legacy_view;
 
@@ -64,15 +74,29 @@ begin
   left join identities i on i.id = g.identity_id
   where i.id is null;
 
+  -- Inventoried internals have an entra user account. Stubs do not.
   select count(*) into stub_humans
-  from identities
-  where identity_class = 'human_internal';
+  from identities i
+  where i.identity_class = 'human_internal'
+    and not exists (
+      select 1
+      from identity_accounts a
+      where a.identity_id = i.id
+        and a.source = 'entra'
+        and a.account_kind = 'user'
+    );
 
-  if identity_count is distinct from guest_count then
-    raise exception '0004 postcheck failed: identities count (%) != guests (%)', identity_count, guest_count;
+  if external_count is distinct from guest_count then
+    raise exception '0004 postcheck failed: external identities (%) != guests (%)', external_count, guest_count;
   end if;
-  if account_count is distinct from guest_count then
-    raise exception '0004 postcheck failed: accounts count (%) != guests (%)', account_count, guest_count;
+  if guest_account_count is distinct from guest_count then
+    raise exception '0004 postcheck failed: guest accounts (%) != guests (%)', guest_account_count, guest_count;
+  end if;
+  if identity_count is distinct from (guest_count + human_internal_count) then
+    raise exception '0004 postcheck failed: identities count (%) != guests (%) + human_internal (%)', identity_count, guest_count, human_internal_count;
+  end if;
+  if account_count is distinct from identity_count then
+    raise exception '0004 postcheck failed: accounts count (%) != identities (%)', account_count, identity_count;
   end if;
   if null_ids <> 0 then
     raise exception '0004 postcheck failed: identity_id nulls = %', null_ids;

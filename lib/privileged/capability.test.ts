@@ -10,6 +10,8 @@ import {
   licenseHintFromSkus,
   parsePrivilegedSettings,
   pimStatusFromProbe,
+  privilegedStageEnabled,
+  shouldProbePrivilegedCapability,
   type PrivilegedDeps,
 } from '@/lib/privileged/capability'
 
@@ -41,6 +43,26 @@ describe('parsePrivilegedSettings', () => {
     expect(parsePrivilegedSettings({ privileged: { enabled: 'true' } }).enabled).toBe(false)
     expect(parsePrivilegedSettings({ privileged: { enabled: false } }).enabled).toBe(false)
     expect(parsePrivilegedSettings({ privileged: { enabled: true } }).enabled).toBe(true)
+    expect(parsePrivilegedSettings({ privileged: { enabled: true } }).granted_permissions).toEqual([])
+  })
+})
+
+describe('privilegedStageEnabled', () => {
+  it('is on only when enabled is true and pim is not needs_consent', () => {
+    expect(privilegedStageEnabled({ privileged: { enabled: true, capability: { pim: 'available', pim_groups: 'available', sign_in_activity: true, auth_methods: true, license_hint: 'p2', checked_at: '2026-11-19T12:00:00.000Z', scan_job_id: null } } })).toBe(true)
+    expect(privilegedStageEnabled({ privileged: { enabled: true, capability: { pim: 'unavailable', pim_groups: 'unknown', sign_in_activity: false, auth_methods: false, license_hint: 'none', checked_at: '2026-11-19T12:00:00.000Z', scan_job_id: null } } })).toBe(true)
+    expect(privilegedStageEnabled({ privileged: { enabled: true, capability: { pim: 'needs_consent', pim_groups: 'needs_consent', sign_in_activity: false, auth_methods: false, license_hint: 'none', checked_at: '2026-11-19T12:00:00.000Z', scan_job_id: null } } })).toBe(false)
+    expect(privilegedStageEnabled({ privileged: { enabled: false, capability: { pim: 'available', pim_groups: 'available', sign_in_activity: true, auth_methods: true, license_hint: 'p2', checked_at: '2026-11-19T12:00:00.000Z', scan_job_id: null } } })).toBe(false)
+    expect(privilegedStageEnabled({})).toBe(false)
+  })
+})
+
+describe('shouldProbePrivilegedCapability', () => {
+  it('is false for demo tenants and when the flag is off', () => {
+    expect(shouldProbePrivilegedCapability(true, false)).toBe(true)
+    expect(shouldProbePrivilegedCapability(false, false)).toBe(false)
+    expect(shouldProbePrivilegedCapability(true, true)).toBe(false)
+    expect(shouldProbePrivilegedCapability(false, true)).toBe(false)
   })
 })
 
@@ -166,5 +188,26 @@ describe('privileged module isolation', () => {
     expect(src).not.toMatch(/from ['"]@\/lib\/graph\/client/)
     expect(src).not.toMatch(/from ['"]@\/lib\/graph\/queries/)
     expect(src).not.toMatch(/\b(post|patch|delete)\s*\(/i)
+  })
+
+  it('does not call getAppOnlyRoles on every settings load', () => {
+    const src = readFileSync(path.join(root, 'app/(app)/settings/page.tsx'), 'utf8')
+    expect(src).toMatch(/consent === 'granted'/)
+    expect(src).toMatch(/granted_permissions/)
+    expect(src).not.toMatch(/getAppOnlyRoles\(tenant\.ms_tenant_id, consent === 'granted'\)/)
+  })
+
+  it('flag-gates recheckPrivilegedCapability on the server', () => {
+    const src = readFileSync(path.join(root, 'lib/actions/settings.ts'), 'utf8')
+    expect(src).toMatch(/shouldProbePrivilegedCapability\(prev\.enabled, tenant\.is_demo\)/)
+  })
+
+  it('keeps the default scan phase list free of privileged and gates the stage in the engine', () => {
+    const src = readFileSync(path.join(root, 'lib/scan/engine.ts'), 'utf8')
+    expect(src).toMatch(/const PHASES: Phase\[\] = \['organization', 'guests', 'groups'/)
+    expect(src).not.toMatch(/const PHASES: Phase\[\] = \[[^\]]*privileged/)
+    expect(src).toMatch(/privilegedStageEnabled/)
+    expect(src).toMatch(/runPrivilegedStage/)
+    expect(src).toMatch(/Inventorying internal users/)
   })
 })

@@ -1,6 +1,8 @@
 import 'server-only'
 import { GraphClient, GraphError } from '@/lib/graph/client'
 
+export type GraphAssignedPlan = { servicePlanId?: string; service?: string; capabilityStatus?: string }
+
 export type GraphUser = {
   id: string
   displayName?: string
@@ -15,6 +17,19 @@ export type GraphUser = {
   creationType?: string
   signInActivity?: { lastSignInDateTime?: string; lastNonInteractiveSignInDateTime?: string }
   sponsors?: { id: string; displayName?: string; mail?: string; accountEnabled?: boolean }[]
+  assignedPlans?: GraphAssignedPlan[]
+  onPremisesSyncEnabled?: boolean | null
+}
+
+export type GraphInternalUser = {
+  id: string
+  displayName?: string
+  mail?: string
+  userPrincipalName?: string
+  userType?: string
+  accountEnabled?: boolean
+  assignedPlans?: GraphAssignedPlan[]
+  onPremisesSyncEnabled?: boolean | null
 }
 
 export type GraphGroup = {
@@ -40,6 +55,23 @@ export type GraphOrganization = {
 const USER_SELECT =
   'id,displayName,mail,userPrincipalName,userType,accountEnabled,createdDateTime,externalUserState,companyName,jobTitle,creationType,signInActivity'
 
+const INTERNAL_USER_SELECT = 'id,displayName,mail,userPrincipalName,userType,accountEnabled,assignedPlans,onPremisesSyncEnabled'
+
+/** Graph `$filter=id in (...)` accepts at most 15 values. */
+export const GRAPH_ID_IN_CHUNK = 15
+
+const GUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+
+function chunk<T>(arr: T[], size: number) {
+  const out: T[][] = []
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  return out
+}
+
+function guidIds(ids: string[]) {
+  return Array.from(new Set(ids.filter((id) => GUID_RE.test(id))))
+}
+
 export async function fetchOrganization(g: GraphClient) {
   const res = await g.get<{ value: GraphOrganization[] }>('/organization?$select=id,displayName,verifiedDomains')
   return res.value[0]
@@ -56,6 +88,38 @@ export async function fetchGuests(g: GraphClient, onProgress?: (n: number) => vo
     }
     throw err
   }
+}
+
+/** Read-only. Chunked `/users?$filter=id in (...)` so Graph stays under the in-operator limit. */
+export async function fetchUsersByIds(g: GraphClient, ids: string[]): Promise<GraphInternalUser[]> {
+  const unique = guidIds(ids)
+  if (unique.length === 0) return []
+  const out: GraphInternalUser[] = []
+  for (const batch of chunk(unique, GRAPH_ID_IN_CHUNK)) {
+    const filter = batch.map((id) => `'${id}'`).join(',')
+    const rows = await g.getAll<GraphInternalUser>(`/users?$filter=id in (${filter})&$select=${INTERNAL_USER_SELECT}&$top=999`)
+    out.push(...rows)
+  }
+  return out
+}
+
+/** Read-only GET. 404 means the user has no manager. */
+export async function fetchManager(g: GraphClient, userId: string): Promise<GraphInternalUser | null> {
+  if (!GUID_RE.test(userId)) return null
+  try {
+    return await g.get<GraphInternalUser>(`/users/${userId}/manager?$select=${INTERNAL_USER_SELECT}`)
+  } catch (err) {
+    if (err instanceof GraphError && (err.status === 404 || err.status === 400)) return null
+    throw err
+  }
+}
+
+/** Active directory role assignment principal IDs. GET only. */
+export async function fetchDirectoryRolePrincipalIds(g: GraphClient): Promise<string[]> {
+  const assignments = await g.getAll<{ principalId?: string }>(
+    '/roleManagement/directory/roleAssignments?$select=principalId&$top=999',
+  )
+  return guidIds(assignments.map((row) => row.principalId ?? ''))
 }
 
 export async function fetchGroups(g: GraphClient, onProgress?: (n: number) => void) {

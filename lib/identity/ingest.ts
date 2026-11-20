@@ -1,4 +1,4 @@
-import { hubRowsFromGuest } from '@/lib/identity/provision'
+import { hubRowsFromGuest, hubRowsFromUser, isDedicatedAdminAccount, type InternalUserHubSource } from '@/lib/identity/provision'
 import type { Guest } from '@/lib/types'
 
 export type ExistingExternalGuest = {
@@ -48,11 +48,21 @@ export type SponsorRelationRow = {
   relation_type: 'sponsors'
 }
 
+export type InventoriedInternal = {
+  ms_object_id: string
+  identity_id: string
+}
+
 type IdentityScanRow = Omit<
   ReturnType<typeof hubRowsFromGuest>['identity'],
   'risk_score' | 'risk_level' | 'recommended_action' | 'review_status' | 'last_reviewed_at' | 'first_seen_at'
 >
 type AccountScanRow = ReturnType<typeof hubRowsFromGuest>['account'] & {
+  last_seen_at: string
+  removed_at: string | null
+}
+
+type InternalAccountScanRow = ReturnType<typeof hubRowsFromUser>['account'] & {
   last_seen_at: string
   removed_at: string | null
 }
@@ -79,14 +89,16 @@ export function asExternalGuest(row: Guest): Guest {
 /**
  * Plan a dual-write of identities, entra accounts, optional sponsor relations,
  * and guest_identities (still keyed by guest_id / ms_object_id).
- * Does not mint human_internal stub identities. The 0004 insert trigger is left
- * in place as a safety net; this planner always sets identity_id so the trigger no-ops.
+ * Resolves sponsors against guests in this plan and inventoried human_internal
+ * rows. Does not mint stub identities. The 0004 insert trigger is left in place
+ * as a safety net; this planner always sets identity_id so the trigger no-ops.
  */
 export function planGuestInventory(input: {
   tenantId: string
   now: string
   incoming: IncomingExternalGuest[]
   existing: ExistingExternalGuest[]
+  internals?: InventoriedInternal[]
   generateId?: () => string
 }): GuestInventoryPlan {
   const generateId = input.generateId ?? (() => crypto.randomUUID())
@@ -134,6 +146,10 @@ export function planGuestInventory(input: {
   }))
 
   const oidToIdentityId = new Map(guests.map((guest) => [guest.ms_object_id, guest.identity_id]))
+  for (const row of input.internals ?? []) {
+    if (!row.ms_object_id || !row.identity_id) continue
+    if (!oidToIdentityId.has(row.ms_object_id)) oidToIdentityId.set(row.ms_object_id, row.identity_id)
+  }
   const relations: SponsorRelationRow[] = []
   for (const guest of guests) {
     if (!guest.sponsor_ms_object_id) continue
@@ -162,5 +178,110 @@ export function planGuestInventory(input: {
     removedGuestIds: removed.map((row) => row.id),
     removedIdentityIds: removed.map((row) => row.identity_id as string),
     newCount,
+  }
+}
+
+export type ExistingInternalAccount = {
+  identity_id: string
+  ms_object_id: string
+  removed_at: string | null
+}
+
+export type IncomingInternalUser = {
+  ms_object_id: string
+  display_name: string | null
+  email: string | null
+  upn: string | null
+  account_enabled: boolean
+  user_type?: string | null
+  on_premises_sync_enabled?: boolean | null
+  assigned_plans?: { servicePlanId?: string; service?: string; capabilityStatus?: string }[]
+  is_role_holder?: boolean
+  is_sponsor?: boolean
+  is_manager?: boolean
+}
+
+export type InternalInventoryPlan = {
+  tenantId: string
+  now: string
+  identities: IdentityScanRow[]
+  accounts: InternalAccountScanRow[]
+  removedIdentityIds: string[]
+}
+
+function inventoryReasons(row: IncomingInternalUser): string[] {
+  const reasons: string[] = []
+  if (row.is_role_holder) reasons.push('role_holder')
+  if (row.is_sponsor) reasons.push('sponsor')
+  if (row.is_manager) reasons.push('manager')
+  return reasons
+}
+
+/**
+ * Scoped human_internal inventory: role holders, guest sponsors, and
+ * role-holder managers. Skips guests. Does not invent stub identities.
+ */
+export function planInternalInventory(input: {
+  tenantId: string
+  now: string
+  incoming: IncomingInternalUser[]
+  existing: ExistingInternalAccount[]
+  generateId?: () => string
+}): InternalInventoryPlan {
+  const generateId = input.generateId ?? (() => crypto.randomUUID())
+  const existingByMs = new Map(input.existing.map((row) => [row.ms_object_id, row]))
+  const incomingIds = new Set<string>()
+  const identities: IdentityScanRow[] = []
+  const accounts: InternalAccountScanRow[] = []
+
+  for (const row of input.incoming) {
+    if (!row.ms_object_id) continue
+    if ((row.user_type ?? 'Member') === 'Guest') continue
+    incomingIds.add(row.ms_object_id)
+    const existing = existingByMs.get(row.ms_object_id)
+    const id = existing?.identity_id ?? generateId()
+    const reasons = inventoryReasons(row)
+    const dedicated_admin = isDedicatedAdminAccount({
+      holdsDirectoryRole: row.is_role_holder === true,
+      onPremisesSyncEnabled: row.on_premises_sync_enabled,
+      displayName: row.display_name,
+      userPrincipalName: row.upn,
+      assignedPlans: row.assigned_plans,
+    })
+    const source: InternalUserHubSource = {
+      id,
+      tenant_id: input.tenantId,
+      ms_object_id: row.ms_object_id,
+      display_name: row.display_name,
+      email: row.email,
+      upn: row.upn,
+      account_enabled: row.account_enabled,
+      last_seen_at: input.now,
+      removed_at: null,
+      on_premises_sync_enabled: row.on_premises_sync_enabled ?? null,
+      assigned_plans: row.assigned_plans ?? [],
+      dedicated_admin,
+      inventory_reasons: reasons,
+    }
+    const { risk_score: _s, risk_level: _l, recommended_action: _a, review_status: _r, last_reviewed_at: _lr, first_seen_at: _fs, ...identity } =
+      hubRowsFromUser(source).identity
+    identities.push(identity)
+    accounts.push({
+      ...hubRowsFromUser(source).account,
+      last_seen_at: input.now,
+      removed_at: null,
+    })
+  }
+
+  const removedIdentityIds = input.existing
+    .filter((row) => !row.removed_at && !incomingIds.has(row.ms_object_id))
+    .map((row) => row.identity_id)
+
+  return {
+    tenantId: input.tenantId,
+    now: input.now,
+    identities,
+    accounts,
+    removedIdentityIds,
   }
 }
