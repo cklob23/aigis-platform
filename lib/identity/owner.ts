@@ -21,6 +21,7 @@ export type OwnerView = {
   email: string | null
   href: string | null
   resolved: boolean
+  internal: boolean
 }
 
 const KIND_LABEL: Record<IdentityOwnerKind, string> = {
@@ -34,8 +35,18 @@ export function ownerKindLabel(kind: IdentityOwnerKind) {
   return KIND_LABEL[kind]
 }
 
-export function ownerHref(owner: Pick<OwnerGuest, 'id' | 'identity_class'>): string {
-  return owner.identity_class === 'human_internal' ? `/identities/${owner.id}` : `/guests/${owner.id}`
+/**
+ * Link only to pages that already exist. Inventoried guest owners go to
+ * /guests/{id}. human_internal has no identity profile route yet, so it
+ * stays unlinked (plain text plus an Internal marker in the UI).
+ */
+export function ownerHref(owner: Pick<OwnerGuest, 'id' | 'identity_class'>): string | null {
+  if (owner.identity_class === 'human_internal') return null
+  return `/guests/${owner.id}`
+}
+
+function isInternalOwner(owner: Pick<OwnerGuest, 'identity_class'> | null | undefined) {
+  return owner?.identity_class === 'human_internal'
 }
 
 /**
@@ -45,7 +56,7 @@ export function ownerHref(owner: Pick<OwnerGuest, 'id' | 'identity_class'>): str
  */
 export function describeOwner(source: OwnerSource, ownerGuest?: OwnerGuest | null): OwnerView {
   if (source.owner_kind === 'none' && !source.owner_identity_id && !source.owner_email && !source.owner_ms_object_id && !source.owner_display_name) {
-    return { kind: 'none', label: 'None', email: null, href: null, resolved: false }
+    return { kind: 'none', label: 'None', email: null, href: null, resolved: false, internal: false }
   }
   if (ownerGuest) {
     return {
@@ -54,11 +65,12 @@ export function describeOwner(source: OwnerSource, ownerGuest?: OwnerGuest | nul
       email: ownerGuest.email,
       href: ownerHref(ownerGuest),
       resolved: true,
+      internal: isInternalOwner(ownerGuest),
     }
   }
   const label = source.owner_display_name ?? source.owner_email ?? source.owner_ms_object_id
   if (!label) {
-    return { kind: source.owner_kind, label: KIND_LABEL[source.owner_kind], email: source.owner_email, href: null, resolved: false }
+    return { kind: source.owner_kind, label: KIND_LABEL[source.owner_kind], email: source.owner_email, href: null, resolved: false, internal: false }
   }
   return {
     kind: source.owner_kind === 'none' ? 'sponsor' : source.owner_kind,
@@ -66,5 +78,6 @@ export function describeOwner(source: OwnerSource, ownerGuest?: OwnerGuest | nul
     email: source.owner_email,
     href: null,
     resolved: false,
+    internal: false,
   }
 }

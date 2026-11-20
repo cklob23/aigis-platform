@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeOwner } from '@/lib/identity/owner'
+import { describeOwner, ownerHref } from '@/lib/identity/owner'
 
 const none = {
   owner_kind: 'none' as const,
@@ -11,7 +11,7 @@ const none = {
 
 describe('describeOwner', () => {
   it('is none when no owner fields are set', () => {
-    expect(describeOwner(none)).toEqual({ kind: 'none', label: 'None', email: null, href: null, resolved: false })
+    expect(describeOwner(none)).toEqual({ kind: 'none', label: 'None', email: null, href: null, resolved: false, internal: false })
   })
 
   it('shows an unresolved sponsor by name and email without minting an identity', () => {
@@ -29,6 +29,7 @@ describe('describeOwner', () => {
       email: 'pat@contoso.example',
       href: null,
       resolved: false,
+      internal: false,
     })
   })
 
@@ -50,10 +51,11 @@ describe('describeOwner', () => {
       email: 'a@ex.example',
       href: '/guests/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
       resolved: true,
+      internal: false,
     })
   })
 
-  it('links to an inventoried human_internal sponsor', () => {
+  it('shows an inventoried human_internal sponsor as plain text, not a missing identities route', () => {
     expect(
       describeOwner(
         {
@@ -74,8 +76,21 @@ describe('describeOwner', () => {
       kind: 'sponsor',
       label: 'Pat Sponsor',
       email: 'pat@contoso.example',
-      href: '/identities/dddddddd-dddd-dddd-dddd-dddddddddddd',
+      href: null,
       resolved: true,
+      internal: true,
     })
+  })
+})
+
+describe('ownerHref', () => {
+  it('does not invent a /identities/{id} route for internal sponsors', () => {
+    expect(ownerHref({ id: 'dddddddd-dddd-dddd-dddd-dddddddddddd', identity_class: 'human_internal' })).toBeNull()
+  })
+
+  it('links guest owners to the existing guest detail page', () => {
+    expect(ownerHref({ id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', identity_class: 'external' })).toBe(
+      '/guests/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    )
   })
 })

@@ -17,9 +17,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatDate, relativeDays, daysBetween, titleCase } from '@/lib/format'
 import { RESOURCE_TYPE_LABELS } from '@/lib/types'
 import { describeRecommendation } from '@/lib/risk/recommendation'
-import { describeOwner, ownerKindLabel } from '@/lib/identity/owner'
+import { describeOwner } from '@/lib/identity/owner'
 import { parseAiSettings } from '@/lib/ai/recommend'
 import { ExplainRecommendation } from '@/components/guests/explain-recommendation'
+import { OwnerFact } from '@/components/guests/owner-fact'
 import { cn } from '@/lib/utils'
 
 export default async function GuestDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -57,24 +58,7 @@ export default async function GuestDetailPage({ params }: { params: Promise<{ id
     { label: 'Auth methods', value: g.auth_methods.length ? g.auth_methods.map((m) => titleCase(m.replace('AuthenticationMethod', ''))).join(', ') : <span className="text-muted-foreground">None registered</span> },
     {
       label: 'Owner',
-      value:
-        owner.kind === 'none' ? (
-          <span className="text-destructive">None</span>
-        ) : (
-          <span className={cn(g.sponsor_enabled === false && 'text-warning')}>
-            <span className="text-muted-foreground text-xs">{ownerKindLabel(owner.kind)}</span>
-            {owner.href ? (
-              <Link href={owner.href} className="block font-medium hover:underline">
-                {owner.label}
-              </Link>
-            ) : (
-              <span className="block">{owner.label}</span>
-            )}
-            {owner.email && <span className="block font-mono text-muted-foreground text-xs">{owner.email}</span>}
-            {g.sponsor_enabled === false && <span className="block text-xs">Sponsor account is disabled</span>}
-            {!owner.resolved && owner.kind === 'sponsor' && <span className="block text-muted-foreground text-xs">Not in inventory</span>}
-          </span>
-        ),
+      value: <OwnerFact owner={owner} sponsorEnabled={g.sponsor_enabled} />,
     },
     { label: 'Review status', value: <span className="capitalize">{titleCase(g.review_status)}{g.last_reviewed_at && <span className="ml-1 text-muted-foreground">· {relativeDays(g.last_reviewed_at)}</span>}</span> },
     { label: 'First seen by AIGIS', value: formatDate(g.first_seen_at) },
