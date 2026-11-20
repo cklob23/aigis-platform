@@ -10,7 +10,7 @@ const _geistMono = Geist_Mono({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
   title: {
-    default: 'AIGIS — Access, Identity & Governance Intelligence System',
+    default: 'AIGIS | Access, Identity & Governance Intelligence System',
     template: '%s · AIGIS',
   },
   description:
