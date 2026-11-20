@@ -5,6 +5,7 @@ import { alertDigest, type AlertEmailItem } from '@/lib/email/templates'
 import { ALERT_TRIGGER_LABELS, type AlertRule, type ApprovalState, type RiskLevel } from '@/lib/types'
 import { requireIdentityId } from '@/lib/identity/governance'
 import { persistNewAlerts, stampAlertEmail } from '@/lib/alerts/persist'
+import { fetchAllById } from '@/lib/supabase/page'
 
 const RISK_ORDER: Record<RiskLevel, number> = { low: 0, medium: 1, high: 2, critical: 3 }
 const DAY = 86_400_000
@@ -70,7 +71,15 @@ export async function evaluateAlertRules(tenantId: string, opts: EvaluateOptions
 
   const needsGuests = rules.some((r) => !['review_overdue', 'scan_failed'].includes(r.trigger_type))
   const guests: GuestRow[] = needsGuests
-    ? (((await supabase.from('guest_identities').select('id,identity_id,display_name,email,domain,risk_level,risk_score,first_seen_at,last_sign_in_at,created_at_ms,external_organization_id,account_enabled').eq('tenant_id', tenantId).is('removed_at', null)).data ?? []) as GuestRow[])
+    ? await fetchAllById<GuestRow>('guest_identities alerts', () =>
+        supabase
+          .from('guest_identities')
+          .select(
+            'id,identity_id,display_name,email,domain,risk_level,risk_score,first_seen_at,last_sign_in_at,created_at_ms,external_organization_id,account_enabled',
+          )
+          .eq('tenant_id', tenantId)
+          .is('removed_at', null),
+      )
     : []
   const guestById = new Map(guests.map((g) => [g.id, g]))
 
@@ -195,8 +204,15 @@ async function candidatesFor(rule: AlertRule, ctx: Ctx): Promise<Candidate[]> {
       if (orgs.size === 0) return []
       let withAccess: Set<string> | null = null
       if (c.sensitive_only) {
-        const { data } = await supabase.from('resource_memberships').select('guest_id, resource:resources!inner(is_sensitive)').eq('tenant_id', ctx.tenantId).is('removed_at', null).eq('resource.is_sensitive', true)
-        withAccess = new Set((data ?? []).map((m) => m.guest_id as string))
+        const sensitiveMembers = await fetchAllById<{ guest_id: string }>('resource_memberships alert sensitive', () =>
+          supabase
+            .from('resource_memberships')
+            .select('guest_id, resource:resources!inner(is_sensitive)')
+            .eq('tenant_id', ctx.tenantId)
+            .is('removed_at', null)
+            .eq('resource.is_sensitive', true),
+        )
+        withAccess = new Set(sensitiveMembers.map((m) => m.guest_id))
       }
       return ctx.guests
         .filter((g) => g.external_organization_id && orgs.has(g.external_organization_id) && (!withAccess || withAccess.has(g.id)))
@@ -214,14 +230,21 @@ async function candidatesFor(rule: AlertRule, ctx: Ctx): Promise<Candidate[]> {
     }
 
     case 'sensitive_access': {
-      const { data } = await supabase
-        .from('resource_memberships')
-        .select('guest_id,resource_id,first_seen_at, resource:resources!inner(id,display_name,is_sensitive,sensitivity_category)')
-        .eq('tenant_id', ctx.tenantId)
-        .is('removed_at', null)
-        .eq('resource.is_sensitive', true)
+      const memberships = await fetchAllById<{
+        guest_id: string
+        resource_id: string
+        first_seen_at: string | null
+        resource: unknown
+      }>('resource_memberships alert access', () =>
+        supabase
+          .from('resource_memberships')
+          .select('guest_id,resource_id,first_seen_at, resource:resources!inner(id,display_name,is_sensitive,sensitivity_category)')
+          .eq('tenant_id', ctx.tenantId)
+          .is('removed_at', null)
+          .eq('resource.is_sensitive', true),
+      )
       const out: Candidate[] = []
-      for (const m of data ?? []) {
+      for (const m of memberships) {
         const g = ctx.guestById.get(m.guest_id as string)
         const r = m.resource as unknown as { id: string; display_name: string; sensitivity_category: string | null } | null
         if (!g || !r) continue

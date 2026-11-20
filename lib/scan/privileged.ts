@@ -22,6 +22,7 @@ import {
 import { writeInternalInventory, writePrivilegedInventory } from '@/lib/identity/write-inventory'
 import { groupPimReadsEnabled, pimDirectoryReadsEnabled } from '@/lib/privileged/capability'
 import { mapPimMemberType, planPrivilegedInventory, scheduleBounds } from '@/lib/privileged/ingest'
+import { fetchAllById } from '@/lib/supabase/page'
 
 function chunk<T>(arr: T[], size: number) {
   const out: T[][] = []
@@ -61,27 +62,26 @@ export async function runPrivilegedStage(
   const pimOn = pimDirectoryReadsEnabled(settings)
   const groupPimOn = groupPimReadsEnabled(settings)
 
-  const { data: guestSponsors } = await supabase
-    .from('guest_identities')
-    .select('sponsor_ms_object_id')
-    .eq('tenant_id', tenantId)
-    .is('removed_at', null)
+  const guestSponsors = await fetchAllById<{ sponsor_ms_object_id: string | null }>('guest_identities sponsors', () =>
+    supabase.from('guest_identities').select('sponsor_ms_object_id').eq('tenant_id', tenantId).is('removed_at', null),
+  )
 
   const sponsorIds = Array.from(
-    new Set((guestSponsors ?? []).map((row) => row.sponsor_ms_object_id as string | null).filter((id): id is string => Boolean(id))),
+    new Set(guestSponsors.map((row) => row.sponsor_ms_object_id).filter((id): id is string => Boolean(id))),
   )
   const roleHolderIds = await fetchDirectoryRolePrincipalIds(g)
   const eligibility = pimOn ? await fetchRoleEligibilitySchedules(g) : []
   const groupEligibility = groupPimOn ? await fetchGroupEligibilitySchedules(g) : []
   let storedEligiblePrincipals: { principal_ms_object_id: string; principal_identity_id: string | null }[] = []
   if (!pimOn) {
-    const { data } = await supabase
-      .from('role_assignments')
-      .select('principal_ms_object_id,principal_identity_id')
-      .eq('tenant_id', tenantId)
-      .eq('assignment_type', 'eligible')
-      .is('removed_at', null)
-    storedEligiblePrincipals = (data ?? []) as typeof storedEligiblePrincipals
+    storedEligiblePrincipals = await fetchAllById('role_assignments eligible principals', () =>
+      supabase
+        .from('role_assignments')
+        .select('principal_ms_object_id,principal_identity_id')
+        .eq('tenant_id', tenantId)
+        .eq('assignment_type', 'eligible')
+        .is('removed_at', null),
+    )
   }
   const eligiblePrincipalIds = [
     ...eligibility.map((row) => row.principalId ?? ''),
@@ -120,36 +120,60 @@ export async function runPrivilegedStage(
     )
   }
 
-  const { data: existingAccounts } = await supabase
-    .from('identity_accounts')
-    .select('identity_id,source_object_id,removed_at')
-    .eq('tenant_id', tenantId)
-    .eq('source', 'entra')
-    .eq('account_kind', 'user')
+  const existingAccounts = await fetchAllById<{
+    identity_id: string
+    source_object_id: string
+    removed_at: string | null
+  }>('identity_accounts internals', () =>
+    supabase
+      .from('identity_accounts')
+      .select('identity_id,source_object_id,removed_at')
+      .eq('tenant_id', tenantId)
+      .eq('source', 'entra')
+      .eq('account_kind', 'user'),
+  )
 
   const plan = planInternalInventory({
     tenantId,
     now,
     incoming,
-    existing: (existingAccounts ?? []).map((row) => ({
-      identity_id: row.identity_id as string,
-      ms_object_id: row.source_object_id as string,
-      removed_at: (row.removed_at as string | null) ?? null,
+    existing: existingAccounts.map((row) => ({
+      identity_id: row.identity_id,
+      ms_object_id: row.source_object_id,
+      removed_at: row.removed_at,
     })),
   })
   await writeInternalInventory(plan)
 
-  const [definitions, assignments, existingRolesRes, existingAssignmentsRes, existingGroupRes] = await Promise.all([
+  const [definitions, assignments, existingRoles, existingAssignments, existingGroup] = await Promise.all([
     fetchRoleDefinitions(g),
     fetchRoleAssignments(g),
-    supabase.from('directory_roles').select('id,ms_role_id,removed_at').eq('tenant_id', tenantId),
-    supabase
-      .from('role_assignments')
-      .select(
-        'id,ms_assignment_id,assignment_type,directory_role_id,principal_ms_object_id,directory_scope_id,member_type,pim_status,starts_at,ends_at,removed_at',
-      )
-      .eq('tenant_id', tenantId),
-    supabase.from('group_pim_eligibilities').select('id,ms_schedule_id,removed_at').eq('tenant_id', tenantId),
+    fetchAllById<{ id: string; ms_role_id: string; removed_at: string | null }>('directory_roles', () =>
+      supabase.from('directory_roles').select('id,ms_role_id,removed_at').eq('tenant_id', tenantId),
+    ),
+    fetchAllById<{
+      id: string
+      ms_assignment_id: string
+      assignment_type: string | null
+      directory_role_id: string | null
+      principal_ms_object_id: string | null
+      directory_scope_id: string | null
+      member_type: string | null
+      pim_status: string | null
+      starts_at: string | null
+      ends_at: string | null
+      removed_at: string | null
+    }>('role_assignments', () =>
+      supabase
+        .from('role_assignments')
+        .select(
+          'id,ms_assignment_id,assignment_type,directory_role_id,principal_ms_object_id,directory_scope_id,member_type,pim_status,starts_at,ends_at,removed_at',
+        )
+        .eq('tenant_id', tenantId),
+    ),
+    fetchAllById<{ id: string; ms_schedule_id: string; removed_at: string | null }>('group_pim_eligibilities', () =>
+      supabase.from('group_pim_eligibilities').select('id,ms_schedule_id,removed_at').eq('tenant_id', tenantId),
+    ),
   ])
   const principalByMsObjectId = new Map(plan.accounts.map((account) => [account.source_object_id, account.identity_id]))
   for (const row of storedEligiblePrincipals) {
@@ -160,21 +184,7 @@ export async function runPrivilegedStage(
   const extraInternalIds = storedEligiblePrincipals
     .map((row) => row.principal_identity_id)
     .filter((id): id is string => Boolean(id))
-  const existingRoles = (existingRolesRes.data ?? []) as { id: string; ms_role_id: string; removed_at: string | null }[]
   const roleMsById = new Map(existingRoles.map((row) => [row.id, row.ms_role_id]))
-  const existingAssignments = (existingAssignmentsRes.data ?? []) as {
-    id: string
-    ms_assignment_id: string
-    assignment_type: string | null
-    directory_role_id: string | null
-    principal_ms_object_id: string | null
-    directory_scope_id: string | null
-    member_type: string | null
-    pim_status: string | null
-    starts_at: string | null
-    ends_at: string | null
-    removed_at: string | null
-  }[]
   const preservedEligible = pimOn
     ? []
     : existingAssignments
@@ -250,7 +260,7 @@ export async function runPrivilegedStage(
         })
       : [],
     existingGroupEligibilities: groupPimOn
-      ? ((existingGroupRes.data ?? []) as { id: string; ms_schedule_id: string; removed_at: string | null }[])
+      ? existingGroup
       : [],
     pim: pimOn ? 'available' : 'skipped',
     pimGroups: groupPimOn ? 'available' : 'skipped',
