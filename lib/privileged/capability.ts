@@ -60,6 +60,18 @@ export function privilegedStageEnabled(settings: Record<string, unknown> | null 
   return parsed.enabled === true && parsed.capability != null && parsed.capability.pim !== 'needs_consent'
 }
 
+/** Directory PIM eligibility GETs. needs_consent, missing capability, and non-available pim stay off. */
+export function pimDirectoryReadsEnabled(settings: Record<string, unknown> | null | undefined): boolean {
+  const parsed = parsePrivilegedSettings(settings)
+  return privilegedStageEnabled(settings) && parsed.capability?.pim === 'available'
+}
+
+/** PIM for Groups eligibility GETs. needs_consent and non-available pim_groups stay off. */
+export function groupPimReadsEnabled(settings: Record<string, unknown> | null | undefined): boolean {
+  const parsed = parsePrivilegedSettings(settings)
+  return privilegedStageEnabled(settings) && parsed.capability?.pim_groups === 'available'
+}
+
 /** Recheck probes Graph. Off and demo tenants must not. */
 export function shouldProbePrivilegedCapability(enabled: boolean, isDemo: boolean): boolean {
   return enabled === true && !isDemo

@@ -185,6 +185,27 @@ export type RoleAssignment = {
   principal_ms_object_id: string
   directory_scope_id: string
   assignment_type: 'active' | 'eligible'
+  member_type: 'direct' | 'group' | 'inherited'
+  pim_status: string | null
+  starts_at: string | null
+  ends_at: string | null
+  first_seen_at: string
+  last_seen_at: string
+  removed_at: string | null
+}
+
+export type GroupPimEligibility = {
+  id: string
+  tenant_id: string
+  ms_schedule_id: string
+  group_ms_object_id: string
+  principal_identity_id: string | null
+  principal_ms_object_id: string
+  access_id: 'member' | 'owner'
+  member_type: 'direct' | 'group' | 'inherited'
+  pim_status: string | null
+  starts_at: string | null
+  ends_at: string | null
   first_seen_at: string
   last_seen_at: string
   removed_at: string | null
