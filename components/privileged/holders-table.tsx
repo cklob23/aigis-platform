@@ -7,23 +7,28 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { TierBadge } from '@/components/privileged/tier-badge'
+import { RiskBadge } from '@/components/risk/risk-badge'
 import {
-  ASSIGNMENT_STATE_LABEL,
-  IDENTITY_CLASS_LABEL,
+  combinedStateLabel,
   filterHolders,
+  privilegedClassLabel,
+  uniqueHolderCount,
   type HolderFilters,
   type PrivilegedAssignmentState,
   type PrivilegedHolder,
 } from '@/lib/privileged/view'
 import { formatDate, relativeDays } from '@/lib/format'
+import { DORMANT_ADMIN_DAYS, daysSince, privilegedReviewPastCadence } from '@/lib/risk/privileged'
+import { cn } from '@/lib/utils'
 import type { IdentityClass } from '@/lib/types'
 
 const CLASS_OPTIONS: { value: 'all' | IdentityClass; label: string }[] = [
   { value: 'all', label: 'All classes' },
-  { value: 'human_internal', label: 'Internal' },
-  { value: 'external', label: 'External' },
-  { value: 'non_human', label: 'Non-human' },
+  { value: 'human_internal', label: 'Internal user' },
+  { value: 'external', label: 'Guest' },
+  { value: 'non_human', label: 'Service principal' },
   { value: 'group', label: 'Group' },
 ]
 const TIER_OPTIONS = [
@@ -39,18 +44,19 @@ const STATE_OPTIONS: { value: 'all' | PrivilegedAssignmentState; label: string }
   { value: 'time_bound', label: 'Time-bound' },
   { value: 'activated', label: 'Activated' },
 ]
-const REVIEW_OPTIONS = [
-  { value: 'all', label: 'Any review' },
-  { value: 'overdue', label: 'Overdue' },
-  { value: 'never', label: 'Never reviewed' },
+const OWNER_OPTIONS = [
+  { value: 'all', label: 'Any owner' },
+  { value: 'unowned', label: 'Unowned' },
 ]
 
 export function HoldersTable({
   holders,
   pimAvailable,
+  totalIdentities,
 }: {
   holders: PrivilegedHolder[]
   pimAvailable: boolean
+  totalIdentities: number
 }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -60,6 +66,7 @@ export function HoldersTable({
   const set = useCallback(
     (key: string, value: string | null) => {
       const next = new URLSearchParams(params.toString())
+      next.set('tab', 'holders')
       if (!value || value === 'all') next.delete(key)
       else next.set(key, value)
       startTransition(() => router.replace(`${pathname}?${next.toString()}`))
@@ -72,7 +79,8 @@ export function HoldersTable({
     class: (params.get('class') as HolderFilters['class']) ?? 'all',
     tier: (params.get('tier') as HolderFilters['tier']) ?? 'all',
     state: (params.get('state') as HolderFilters['state']) ?? 'all',
-    review: (params.get('review') as HolderFilters['review']) ?? 'all',
+    owner: (params.get('owner') as HolderFilters['owner']) ?? 'all',
+    dormant: params.get('dormant') === '1',
   }
   const rows = useMemo(() => filterHolders(holders, filters), [holders, filters])
 
@@ -108,78 +116,23 @@ export function HoldersTable({
             aria-label="Search role holders"
           />
         </div>
-        {select('class', CLASS_OPTIONS, 'w-36')}
+        {select('class', CLASS_OPTIONS, 'w-40')}
         {select('tier', TIER_OPTIONS, 'w-28')}
         {pimAvailable && select('state', STATE_OPTIONS, 'w-36')}
-        {select('review', REVIEW_OPTIONS, 'w-36')}
+        {select('owner', OWNER_OPTIONS, 'w-32')}
+        <Button
+          type="button"
+          size="sm"
+          variant={filters.dormant ? 'secondary' : 'outline'}
+          onClick={() => set('dormant', filters.dormant ? null : '1')}
+        >
+          Dormant only
+        </Button>
+        <span className="ml-auto text-muted-foreground text-xs">
+          Showing {uniqueHolderCount(rows)} of {totalIdentities}
+        </span>
       </div>
-      <div className="overflow-hidden rounded-lg border">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/40 hover:bg-muted/40">
-              <TableHead>Identity</TableHead>
-              <TableHead>Class</TableHead>
-              <TableHead>Tier</TableHead>
-              <TableHead>Roles</TableHead>
-              <TableHead>{pimAvailable ? 'State' : 'State'}</TableHead>
-              <TableHead className="hidden md:table-cell">Last activity</TableHead>
-              <TableHead className="hidden lg:table-cell">Last reviewed</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.identityId}>
-                <TableCell>
-                  <div className="flex min-w-0 flex-col">
-                    <span className="flex items-center gap-2 font-medium">
-                      <span className="truncate">{row.displayName ?? row.email}</span>
-                      {row.identityClass === 'external' && <TierBadge tier={row.privilegeTier} />}
-                    </span>
-                    <span className="truncate font-mono text-muted-foreground text-xs">{row.email}</span>
-                  </div>
-                </TableCell>
-                <TableCell className="text-xs">{IDENTITY_CLASS_LABEL[row.identityClass]}</TableCell>
-                <TableCell>
-                  <TierBadge tier={row.privilegeTier} />
-                </TableCell>
-                <TableCell>
-                  <div className="flex flex-wrap gap-1">
-                    {row.roles.map((role) => (
-                      <Badge key={role.assignmentId} variant="outline" className="h-5 max-w-48 truncate font-normal">
-                        {role.roleName}
-                      </Badge>
-                    ))}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex flex-wrap gap-1">
-                    {pimAvailable ? (
-                      row.assignmentStates.map((state) => (
-                        <Badge key={state} variant="outline" className="h-5 font-normal">
-                          {ASSIGNMENT_STATE_LABEL[state]}
-                        </Badge>
-                      ))
-                    ) : (
-                      <Badge variant="outline" className="h-5 font-normal">
-                        Active · PIM n/a
-                      </Badge>
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell className="hidden font-mono text-xs md:table-cell">{relativeDays(row.lastActivityAt)}</TableCell>
-                <TableCell className="hidden font-mono text-xs lg:table-cell">{row.lastReviewedAt ? formatDate(row.lastReviewedAt) : 'Never'}</TableCell>
-              </TableRow>
-            ))}
-            {rows.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={7} className="py-8 text-center text-muted-foreground text-sm">
-                  No role holders match these filters.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      <HoldersMarkup rows={rows} pimAvailable={pimAvailable} />
     </div>
   )
 }
@@ -188,76 +141,102 @@ export function HoldersTableStatic({
   holders,
   pimAvailable,
   filters = {},
+  totalIdentities,
 }: {
   holders: PrivilegedHolder[]
   pimAvailable: boolean
   filters?: HolderFilters
+  totalIdentities?: number
 }) {
   const rows = filterHolders(holders, filters)
   return (
-    <HoldersMarkup rows={rows} pimAvailable={pimAvailable} />
+    <div className="flex flex-col gap-2">
+      <span className="text-muted-foreground text-xs">
+        Showing {uniqueHolderCount(rows)} of {totalIdentities ?? uniqueHolderCount(holders)}
+      </span>
+      <HoldersMarkup rows={rows} pimAvailable={pimAvailable} />
+    </div>
   )
 }
 
 function HoldersMarkup({ rows, pimAvailable }: { rows: PrivilegedHolder[]; pimAvailable: boolean }) {
   return (
-    <div className="overflow-hidden rounded-lg border">
+    <div className="overflow-x-auto rounded-lg border">
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/40 hover:bg-muted/40">
             <TableHead>Identity</TableHead>
             <TableHead>Class</TableHead>
-            <TableHead>Tier</TableHead>
+            <TableHead>Highest tier</TableHead>
             <TableHead>Roles</TableHead>
-            <TableHead>State</TableHead>
-            <TableHead className="hidden md:table-cell">Last activity</TableHead>
-            <TableHead className="hidden lg:table-cell">Last reviewed</TableHead>
+            <TableHead>Assignment</TableHead>
+            <TableHead className="hidden md:table-cell">Last sign-in</TableHead>
+            <TableHead className="hidden lg:table-cell">MFA method</TableHead>
+            <TableHead className="hidden xl:table-cell">Owner</TableHead>
+            <TableHead>Risk</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.map((row) => (
-            <TableRow key={row.identityId}>
-              <TableCell>
-                <div className="flex min-w-0 flex-col">
-                  <span className="flex items-center gap-2 font-medium">
-                    <span className="truncate">{row.displayName ?? row.email}</span>
-                    {row.identityClass === 'external' && <TierBadge tier={row.privilegeTier} />}
-                  </span>
-                  <span className="truncate font-mono text-muted-foreground text-xs">{row.email}</span>
-                </div>
-              </TableCell>
-              <TableCell className="text-xs">{IDENTITY_CLASS_LABEL[row.identityClass]}</TableCell>
-              <TableCell>
-                <TierBadge tier={row.privilegeTier} />
-              </TableCell>
-              <TableCell>
-                <div className="flex flex-wrap gap-1">
-                  {row.roles.map((role) => (
-                    <Badge key={role.assignmentId} variant="outline" className="h-5 max-w-48 truncate font-normal">
-                      {role.roleName}
-                    </Badge>
-                  ))}
-                </div>
-              </TableCell>
-              <TableCell>
-                {pimAvailable ? (
-                  row.assignmentStates.map((state) => (
-                    <Badge key={state} variant="outline" className="mr-1 h-5 font-normal">
-                      {ASSIGNMENT_STATE_LABEL[state]}
-                    </Badge>
-                  ))
-                ) : (
-                  <Badge variant="outline" className="h-5 font-normal">
-                    Active · PIM n/a
-                  </Badge>
-                )}
-              </TableCell>
-              <TableCell className="hidden font-mono text-xs md:table-cell">{relativeDays(row.lastActivityAt)}</TableCell>
-              <TableCell className="hidden font-mono text-xs lg:table-cell">{row.lastReviewedAt ? formatDate(row.lastReviewedAt) : 'Never'}</TableCell>
-            </TableRow>
+            <HolderRow key={`${row.identityId}:${row.roleId}`} row={row} pimAvailable={pimAvailable} />
           ))}
+          {rows.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={9} className="py-8 text-center text-muted-foreground text-sm">
+                No role holders match these filters.
+              </TableCell>
+            </TableRow>
+          )}
         </TableBody>
       </Table>
     </div>
+  )
+}
+
+function HolderRow({ row, pimAvailable }: { row: PrivilegedHolder; pimAvailable: boolean }) {
+  const idle = daysSince(row.lastActivityAt)
+  const dormant = row.lastActivityAt == null || (idle !== null && idle >= DORMANT_ADMIN_DAYS)
+  const neverReviewed = !row.lastReviewedAt
+  const overdue = privilegedReviewPastCadence(row.lastReviewedAt)
+  return (
+    <TableRow>
+      <TableCell>
+        <div className="flex min-w-0 flex-col">
+          <span className="truncate font-medium">{row.displayName ?? row.email}</span>
+          <span className="truncate font-mono text-muted-foreground text-xs">{row.email}</span>
+        </div>
+      </TableCell>
+      <TableCell className="text-xs">{privilegedClassLabel(row.identityClass, row.dedicatedAdmin)}</TableCell>
+      <TableCell>
+        <TierBadge tier={row.privilegeTier} />
+      </TableCell>
+      <TableCell>
+        <span className="text-sm">{row.roleName}</span>
+      </TableCell>
+      <TableCell>
+        <Badge variant="outline" className="h-5 font-normal">
+          {pimAvailable ? combinedStateLabel(row.assignmentStates, true) : 'Active'}
+        </Badge>
+      </TableCell>
+      <TableCell className={cn('hidden tnum text-xs md:table-cell', dormant && 'text-destructive')}>
+        {relativeDays(row.lastActivityAt)}
+      </TableCell>
+      <TableCell className="hidden text-xs lg:table-cell">{row.mfaLabel}</TableCell>
+      <TableCell className="hidden text-xs xl:table-cell">{row.ownerDisplayName ?? '—'}</TableCell>
+      <TableCell>
+        <div className="flex flex-wrap items-center gap-1">
+          <RiskBadge level={row.riskLevel} />
+          <span className="tnum text-xs">{row.riskScore}</span>
+          {overdue && !neverReviewed && (
+            <span className="rounded bg-[#FEF3C7] px-1 text-[10px] font-medium text-[#B45309]">Overdue</span>
+          )}
+          {(neverReviewed || overdue) && (
+            <span className={cn('tnum text-xs', (neverReviewed || overdue) && 'text-[#B45309]')}>
+              {neverReviewed ? 'Never' : formatDate(row.lastReviewedAt)}
+            </span>
+          )}
+        </div>
+      </TableCell>
+    </TableRow>
   )
 }

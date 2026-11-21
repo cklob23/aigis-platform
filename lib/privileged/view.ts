@@ -1,5 +1,6 @@
 import type { IdentityClass, RiskLevel } from '@/lib/types'
-import { DORMANT_ADMIN_DAYS, daysSince, privilegedReviewPastCadence } from '@/lib/risk/privileged'
+import { DORMANT_ADMIN_DAYS, PRIVILEGED_REVIEW_DAYS, daysSince, privilegedReviewPastCadence } from '@/lib/risk/privileged'
+import { TIER_0_DIRECTORY_ROLES } from '@/lib/privileged/tiers'
 
 export type PrivilegedAssignmentState = 'permanent' | 'eligible' | 'time_bound' | 'activated' | 'active'
 
@@ -12,10 +13,10 @@ export const ASSIGNMENT_STATE_LABEL: Record<PrivilegedAssignmentState, string> =
 }
 
 export const IDENTITY_CLASS_LABEL: Record<IdentityClass, string> = {
-  human_internal: 'Internal',
-  external: 'External',
+  human_internal: 'Internal user',
+  external: 'Guest',
   privileged: 'Privileged',
-  non_human: 'Non-human',
+  non_human: 'Service principal',
   group: 'Group',
   agent: 'Agent',
 }
@@ -25,6 +26,26 @@ export const TIER_LABEL: Record<0 | 1 | 2, string> = {
   1: 'Tier 1',
   2: 'Tier 2',
 }
+
+export const TIER_HINT: Record<0 | 1 | 2, string> = {
+  0: 'tenant-wide control',
+  1: 'other admin roles',
+  2: 'read-only admin roles',
+}
+
+export const FINDING_EXPLANATIONS: Record<string, string> = {
+  too_many_global_admins: 'Microsoft guidance is fewer than five.',
+  no_strong_auth: 'No authenticator app, FIDO2 key, or Windows Hello registered.',
+  sp_with_role: 'Flagged here. Full app review comes with non-human identities.',
+  role_via_unowned_group: 'A role-assignable group that grants an admin role has no owner.',
+  guest_with_role: 'An external identity holds a privileged directory role (any tier).',
+  permanent_tier0: 'Standing (permanent) Tier 0 assignment while PIM is available.',
+  permanent_tier1: 'Standing (permanent) Tier 1 assignment while PIM is available.',
+  privileged_review_overdue: 'Privileged access not reviewed in the last 90 days.',
+  dormant_admin: 'A privileged account has not signed in for 90 days or more.',
+}
+
+const HIDDEN_WITHOUT_P2 = new Set(['permanent_tier0', 'permanent_tier1'])
 
 export type PrivilegedIdentityRow = {
   id: string
@@ -38,6 +59,9 @@ export type PrivilegedIdentityRow = {
   risk_score: number
   risk_level: RiskLevel
   status: string
+  owner_display_name?: string | null
+  dedicated_admin?: boolean
+  auth_methods?: string[] | null
 }
 
 export type PrivilegedAssignmentRow = {
@@ -59,12 +83,37 @@ export type PrivilegedRoleRow = {
   is_privileged: boolean
   is_built_in: boolean
   description: string | null
+  template_id?: string | null
 }
 
 export type PrivilegedFindingCount = {
   finding_type: string
   title: string
   count: number
+  explanation?: string
+}
+
+export type TierAssignmentCounts = {
+  holders: number
+  permanent: number
+  eligible: number
+  timeBound: number
+}
+
+export type PrivilegedReviewsSummary = {
+  cadenceDays: number
+  lastCompletedAt: string | null
+  nextDueAt: string | null
+  openRequests: number
+  awaitingApproval: number
+}
+
+export type PrivilegedWhoHolds = {
+  internalUser: number
+  dedicatedAdmin: number
+  guests: number
+  servicePrincipals: number
+  viaGroups: number
 }
 
 export type PrivilegedSummary = {
@@ -72,6 +121,8 @@ export type PrivilegedSummary = {
   assignments: number
   byClass: Record<IdentityClass, number>
   byTier: { t0: number; t1: number; t2: number }
+  byTierAssignments: { t0: TierAssignmentCounts; t1: TierAssignmentCounts; t2: TierAssignmentCounts }
+  whoHolds: PrivilegedWhoHolds
   standing: number
   jitEligible: number
   timeBound: number
@@ -82,6 +133,8 @@ export type PrivilegedSummary = {
   overdueReviews: number
   dormant: number
   findings: PrivilegedFindingCount[]
+  reviews: PrivilegedReviewsSummary
+  remediationCount: number
 }
 
 export type PrivilegedHolder = {
@@ -89,14 +142,34 @@ export type PrivilegedHolder = {
   displayName: string | null
   email: string | null
   identityClass: IdentityClass
+  dedicatedAdmin: boolean
   privilegeTier: 0 | 1 | 2 | null
   assignmentStates: PrivilegedAssignmentState[]
-  roles: { assignmentId: string; roleId: string; roleName: string; state: PrivilegedAssignmentState; scope: string }[]
+  roleId: string
+  roleName: string
   lastActivityAt: string | null
   lastReviewedAt: string | null
   riskScore: number
   riskLevel: RiskLevel
   status: string
+  ownerDisplayName: string | null
+  mfaLabel: string
+  topFactor: string | null
+}
+
+export type PrivilegedHighestRisk = {
+  identityId: string
+  displayName: string | null
+  email: string | null
+  identityClass: IdentityClass
+  dedicatedAdmin: boolean
+  privilegeTier: 0 | 1 | 2 | null
+  roleNames: string[]
+  lastActivityAt: string | null
+  lastReviewedAt: string | null
+  riskScore: number
+  riskLevel: RiskLevel
+  topFactor: string | null
 }
 
 export type PrivilegedRoleListItem = {
@@ -109,11 +182,13 @@ export type PrivilegedRoleListItem = {
   holderCount: number
   standingCount: number
   eligibleCount: number
+  lastReviewAt: string | null
 }
 
 export type PrivilegedDetail = {
   summary: PrivilegedSummary
   holders: PrivilegedHolder[]
+  highestRisk: PrivilegedHighestRisk[]
   roles: PrivilegedRoleListItem[]
 }
 
@@ -129,6 +204,26 @@ export function assignmentState(
   return 'permanent'
 }
 
+export function combinedStateLabel(states: PrivilegedAssignmentState[], pimAvailable: boolean): string {
+  if (!pimAvailable) return 'Active'
+  const order: PrivilegedAssignmentState[] = ['permanent', 'eligible', 'time_bound', 'activated', 'active']
+  const unique = [...new Set(states)].sort((a, b) => order.indexOf(a) - order.indexOf(b))
+  if (unique.length === 0) return '—'
+  return unique.map((state) => ASSIGNMENT_STATE_LABEL[state]).join(' + ')
+}
+
+export function privilegedClassLabel(identityClass: IdentityClass, dedicatedAdmin = false): string {
+  if (identityClass === 'human_internal' && dedicatedAdmin) return 'Dedicated admin'
+  return IDENTITY_CLASS_LABEL[identityClass]
+}
+
+export function mfaMethodLabel(identityClass: IdentityClass, methods: string[] | null | undefined): string {
+  if (identityClass === 'non_human' || identityClass === 'group' || identityClass === 'agent') return 'n/a'
+  if (methods == null) return '—'
+  if (methods.length === 0) return 'None'
+  return 'Yes'
+}
+
 export function emptyClassCounts(): Record<IdentityClass, number> {
   return {
     human_internal: 0,
@@ -140,10 +235,43 @@ export function emptyClassCounts(): Record<IdentityClass, number> {
   }
 }
 
+export function emptyTierAssignments(): TierAssignmentCounts {
+  return { holders: 0, permanent: 0, eligible: 0, timeBound: 0 }
+}
+
+export function emptyReviews(): PrivilegedReviewsSummary {
+  return {
+    cadenceDays: PRIVILEGED_REVIEW_DAYS,
+    lastCompletedAt: null,
+    nextDueAt: null,
+    openRequests: 0,
+    awaitingApproval: 0,
+  }
+}
+
+export function visiblePrivilegedFindings(
+  findings: PrivilegedFindingCount[],
+  pimAvailable: boolean,
+): PrivilegedFindingCount[] {
+  return findings
+    .filter((row) => pimAvailable || !HIDDEN_WITHOUT_P2.has(row.finding_type))
+    .map((row) => ({
+      ...row,
+      title: displayFindingTitle(row.finding_type, row.title),
+      explanation: row.explanation ?? FINDING_EXPLANATIONS[row.finding_type] ?? row.title,
+    }))
+}
+
+export function displayFindingTitle(findingType: string, fallback: string) {
+  if (findingType === 'guest_with_role') return 'External identity with an admin role'
+  return fallback
+}
+
 export function summarizePrivileged(
   identities: PrivilegedIdentityRow[],
   assignments: PrivilegedAssignmentRow[],
-  pimAvailable: boolean,
+  roles: PrivilegedRoleRow[] = [],
+  pimAvailable = true,
   findings: PrivilegedFindingCount[] = [],
   now = Date.now(),
 ): PrivilegedSummary {
@@ -154,9 +282,11 @@ export function summarizePrivileged(
   let neverReviewed = 0
   let overdueReviews = 0
   let dormant = 0
+  let dedicatedAdmin = 0
 
   for (const row of privileged) {
     byClass[row.identity_class] += 1
+    if (row.dedicated_admin && row.identity_class === 'human_internal') dedicatedAdmin += 1
     if (row.privilege_tier === 0) byTier.t0 += 1
     else if (row.privilege_tier === 1) byTier.t1 += 1
     else if (row.privilege_tier === 2) byTier.t2 += 1
@@ -178,12 +308,44 @@ export function summarizePrivileged(
   let jitEligible = 0
   let timeBound = 0
   let activated = 0
+  const viaGroupIds = new Set<string>()
   for (const row of liveAssignments) {
     const state = assignmentState(row, pimAvailable)
     if (state === 'permanent' || state === 'active') standing += 1
     else if (state === 'eligible') jitEligible += 1
     else if (state === 'time_bound') timeBound += 1
     else if (state === 'activated') activated += 1
+    if (row.member_type === 'group' && row.principal_identity_id) viaGroupIds.add(row.principal_identity_id)
+  }
+
+  const roleById = new Map(roles.map((row) => [row.id, row]))
+  const byTierAssignments = {
+    t0: emptyTierAssignments(),
+    t1: emptyTierAssignments(),
+    t2: emptyTierAssignments(),
+  }
+  const holdersByTierSeen = {
+    t0: new Set<string>(),
+    t1: new Set<string>(),
+    t2: new Set<string>(),
+  }
+  for (const identity of privileged) {
+    const key = identity.privilege_tier === 0 ? 't0' : identity.privilege_tier === 1 ? 't1' : identity.privilege_tier === 2 ? 't2' : null
+    if (key) holdersByTierSeen[key].add(identity.id)
+  }
+  byTierAssignments.t0.holders = holdersByTierSeen.t0.size
+  byTierAssignments.t1.holders = holdersByTierSeen.t1.size
+  byTierAssignments.t2.holders = holdersByTierSeen.t2.size
+
+  for (const row of liveAssignments) {
+    const role = roleById.get(row.directory_role_id)
+    const tier = role?.privilege_tier
+    const bucket = tier === 0 ? byTierAssignments.t0 : tier === 1 ? byTierAssignments.t1 : tier === 2 ? byTierAssignments.t2 : null
+    if (!bucket) continue
+    const state = assignmentState(row, pimAvailable)
+    if (state === 'permanent' || state === 'active') bucket.permanent += 1
+    else if (state === 'eligible') bucket.eligible += 1
+    else if (state === 'time_bound') bucket.timeBound += 1
   }
 
   return {
@@ -191,6 +353,14 @@ export function summarizePrivileged(
     assignments: liveAssignments.length,
     byClass,
     byTier,
+    byTierAssignments,
+    whoHolds: {
+      internalUser: Math.max(0, byClass.human_internal - dedicatedAdmin),
+      dedicatedAdmin,
+      guests: byClass.external,
+      servicePrincipals: byClass.non_human,
+      viaGroups: viaGroupIds.size,
+    },
     standing,
     jitEligible,
     timeBound,
@@ -200,7 +370,9 @@ export function summarizePrivileged(
     neverReviewed,
     overdueReviews,
     dormant,
-    findings,
+    findings: visiblePrivilegedFindings(findings, pimAvailable),
+    reviews: emptyReviews(),
+    remediationCount: 0,
   }
 }
 
@@ -209,57 +381,120 @@ export function buildPrivilegedHolders(
   assignments: PrivilegedAssignmentRow[],
   roles: PrivilegedRoleRow[],
   pimAvailable: boolean,
+  topFactorByIdentity: Record<string, string> = {},
 ): PrivilegedHolder[] {
   const roleById = new Map(roles.map((row) => [row.id, row]))
-  const byIdentity = new Map<string, PrivilegedHolder>()
+  const identityById = new Map(identities.filter((row) => row.is_privileged).map((row) => [row.id, row]))
 
-  for (const identity of identities) {
-    if (!identity.is_privileged) continue
-    byIdentity.set(identity.id, {
+  type Group = {
+    identity: PrivilegedIdentityRow
+    roleId: string
+    roleName: string
+    states: PrivilegedAssignmentState[]
+  }
+  const groups = new Map<string, Group>()
+
+  for (const row of assignments) {
+    if (!row.principal_identity_id) continue
+    const identity = identityById.get(row.principal_identity_id)
+    if (!identity) continue
+    const role = roleById.get(row.directory_role_id)
+    if (role && !role.is_privileged) continue
+    const key = `${identity.id}::${row.directory_role_id}`
+    const current = groups.get(key) ?? {
+      identity,
+      roleId: row.directory_role_id,
+      roleName: role?.display_name ?? 'Directory role',
+      states: [],
+    }
+    const state = assignmentState(row, pimAvailable)
+    if (!current.states.includes(state)) current.states.push(state)
+    groups.set(key, current)
+  }
+
+  const rows: PrivilegedHolder[] = []
+  for (const group of groups.values()) {
+    const identity = group.identity
+    rows.push({
       identityId: identity.id,
       displayName: identity.display_name,
       email: identity.primary_email,
       identityClass: identity.identity_class,
+      dedicatedAdmin: Boolean(identity.dedicated_admin),
       privilegeTier: identity.privilege_tier,
-      assignmentStates: [],
-      roles: [],
+      assignmentStates: group.states,
+      roleId: group.roleId,
+      roleName: group.roleName,
       lastActivityAt: identity.last_activity_at,
       lastReviewedAt: identity.last_reviewed_at,
       riskScore: identity.risk_score,
       riskLevel: identity.risk_level,
       status: identity.status,
+      ownerDisplayName: identity.owner_display_name ?? null,
+      mfaLabel: mfaMethodLabel(identity.identity_class, identity.auth_methods),
+      topFactor: topFactorByIdentity[identity.id] ?? null,
     })
   }
 
-  for (const row of assignments) {
-    if (!row.principal_identity_id) continue
-    const holder = byIdentity.get(row.principal_identity_id)
-    if (!holder) continue
-    const role = roleById.get(row.directory_role_id)
-    const state = assignmentState(row, pimAvailable)
-    holder.roles.push({
-      assignmentId: row.id,
-      roleId: row.directory_role_id,
-      roleName: role?.display_name ?? 'Directory role',
-      state,
-      scope: row.directory_scope_id || '/',
-    })
-    if (!holder.assignmentStates.includes(state)) holder.assignmentStates.push(state)
-  }
-
-  return Array.from(byIdentity.values()).sort((a, b) => {
+  return rows.sort((a, b) => {
     const tierA = a.privilegeTier ?? 9
     const tierB = b.privilegeTier ?? 9
     if (tierA !== tierB) return tierA - tierB
-    return (a.displayName ?? a.email ?? '').localeCompare(b.displayName ?? b.email ?? '')
+    const name = (a.displayName ?? a.email ?? '').localeCompare(b.displayName ?? b.email ?? '')
+    if (name !== 0) return name
+    return a.roleName.localeCompare(b.roleName)
   })
+}
+
+export function buildHighestRiskHolders(holders: PrivilegedHolder[], limit = 4): PrivilegedHighestRisk[] {
+  const byIdentity = new Map<string, PrivilegedHighestRisk>()
+  for (const row of holders) {
+    const current = byIdentity.get(row.identityId)
+    if (!current) {
+      byIdentity.set(row.identityId, {
+        identityId: row.identityId,
+        displayName: row.displayName,
+        email: row.email,
+        identityClass: row.identityClass,
+        dedicatedAdmin: row.dedicatedAdmin,
+        privilegeTier: row.privilegeTier,
+        roleNames: [row.roleName],
+        lastActivityAt: row.lastActivityAt,
+        lastReviewedAt: row.lastReviewedAt,
+        riskScore: row.riskScore,
+        riskLevel: row.riskLevel,
+        topFactor: row.topFactor,
+      })
+      continue
+    }
+    if (!current.roleNames.includes(row.roleName)) current.roleNames.push(row.roleName)
+  }
+  return Array.from(byIdentity.values())
+    .sort((a, b) => b.riskScore - a.riskScore || (a.displayName ?? '').localeCompare(b.displayName ?? ''))
+    .slice(0, limit)
 }
 
 export function buildPrivilegedRoles(
   roles: PrivilegedRoleRow[],
   assignments: PrivilegedAssignmentRow[],
-  pimAvailable: boolean,
+  identities: PrivilegedIdentityRow[] = [],
+  pimAvailable = true,
 ): PrivilegedRoleListItem[] {
+  const identityById = new Map(identities.map((row) => [row.id, row]))
+  const listed = roles.filter((row) => row.is_privileged)
+  const present = new Set(listed.map((row) => row.display_name))
+  for (const name of TIER_0_DIRECTORY_ROLES) {
+    if (present.has(name)) continue
+    listed.push({
+      id: `missing-t0:${name}`,
+      display_name: name,
+      privilege_tier: 0,
+      is_privileged: true,
+      is_built_in: true,
+      description: null,
+    })
+  }
+
   const holdersByRole = new Map<string, Set<string>>()
   const standingByRole = new Map<string, number>()
   const eligibleByRole = new Map<string, number>()
@@ -277,22 +512,33 @@ export function buildPrivilegedRoles(
     }
   }
 
-  return roles
-    .map((row) => ({
-      id: row.id,
-      displayName: row.display_name,
-      privilegeTier: row.privilege_tier,
-      isPrivileged: row.is_privileged,
-      isBuiltIn: row.is_built_in,
-      description: row.description,
-      holderCount: holdersByRole.get(row.id)?.size ?? 0,
-      standingCount: standingByRole.get(row.id) ?? 0,
-      eligibleCount: eligibleByRole.get(row.id) ?? 0,
-    }))
+  return listed
+    .map((row) => {
+      const holderIds = holdersByRole.get(row.id) ?? new Set()
+      let lastReviewAt: string | null = null
+      for (const id of holderIds) {
+        const reviewed = identityById.get(id)?.last_reviewed_at ?? null
+        if (reviewed && (!lastReviewAt || reviewed > lastReviewAt)) lastReviewAt = reviewed
+      }
+      return {
+        id: row.id,
+        displayName: row.display_name,
+        privilegeTier: row.privilege_tier,
+        isPrivileged: row.is_privileged,
+        isBuiltIn: row.is_built_in,
+        description: row.description,
+        holderCount: holderIds.size,
+        standingCount: standingByRole.get(row.id) ?? 0,
+        eligibleCount: eligibleByRole.get(row.id) ?? 0,
+        lastReviewAt,
+      }
+    })
     .sort((a, b) => {
       const tierA = a.privilegeTier ?? 9
       const tierB = b.privilegeTier ?? 9
       if (tierA !== tierB) return tierA - tierB
+      if (a.holderCount === 0 && b.holderCount !== 0) return 1
+      if (a.holderCount !== 0 && b.holderCount === 0) return -1
       return a.displayName.localeCompare(b.displayName)
     })
 }
@@ -302,6 +548,8 @@ export type HolderFilters = {
   class?: IdentityClass | 'all'
   tier?: '0' | '1' | '2' | 'all'
   state?: PrivilegedAssignmentState | 'all'
+  owner?: 'any' | 'unowned' | 'all'
+  dormant?: boolean
   review?: 'overdue' | 'never' | 'all'
 }
 
@@ -309,16 +557,28 @@ export function filterHolders(holders: PrivilegedHolder[], filters: HolderFilter
   const q = filters.q?.trim().toLowerCase()
   return holders.filter((row) => {
     if (q) {
-      const hay = `${row.displayName ?? ''} ${row.email ?? ''} ${row.roles.map((r) => r.roleName).join(' ')}`.toLowerCase()
+      const hay = `${row.displayName ?? ''} ${row.email ?? ''} ${row.roleName}`.toLowerCase()
       if (!hay.includes(q)) return false
     }
-    if (filters.class && filters.class !== 'all' && row.identityClass !== filters.class) return false
+    if (filters.class && filters.class !== 'all') {
+      if (filters.class === 'human_internal' && row.dedicatedAdmin) return false
+      if (row.identityClass !== filters.class) return false
+    }
     if (filters.tier && filters.tier !== 'all' && String(row.privilegeTier) !== filters.tier) return false
     if (filters.state && filters.state !== 'all' && !row.assignmentStates.includes(filters.state)) return false
+    if (filters.owner === 'unowned' && row.ownerDisplayName) return false
+    if (filters.dormant) {
+      const idle = daysSince(row.lastActivityAt, now)
+      if (row.lastActivityAt != null && (idle === null || idle < DORMANT_ADMIN_DAYS)) return false
+    }
     if (filters.review === 'never' && row.lastReviewedAt) return false
     if (filters.review === 'overdue' && !privilegedReviewPastCadence(row.lastReviewedAt, now)) return false
     return true
   })
+}
+
+export function uniqueHolderCount(holders: PrivilegedHolder[]) {
+  return new Set(holders.map((row) => row.identityId)).size
 }
 
 export function summaryHasIdentityNames(summary: PrivilegedSummary, identities: PrivilegedIdentityRow[]) {

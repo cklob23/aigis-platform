@@ -73,12 +73,6 @@ export default async function DashboardPage() {
         }
       />
 
-      {privileged && (
-        <section aria-label="Privileged access">
-          <PrivilegedDashboardCard summary={privileged} />
-        </section>
-      )}
-
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-6" aria-label="Key metrics">
         <StatCard label="External identities" value={cur.total_guests} delta={delta('total_guests')} href="/guests" hint="active in directory" />
         <StatCard label="Critical risk" value={cur.critical} delta={delta('critical')} href="/guests?risk=critical" tone="critical" hint="recommend removal" />
@@ -87,6 +81,12 @@ export default async function DashboardPage() {
         <StatCard label="Sensitive exposure" value={cur.sensitive_with_guests} delta={delta('sensitive_with_guests')} href="/resources?sensitive=1" hint="sensitive resources with guests" />
         <StatCard label="Unknown domains" value={cur.unknown_domains} delta={delta('unknown_domains')} href="/domains?classification=unknown" hint={`of ${cur.domains} domains`} />
       </section>
+
+      {privileged && (
+        <section aria-label="Privileged access">
+          <PrivilegedDashboardCard summary={privileged} />
+        </section>
+      )}
 
       <section className="grid gap-4 lg:grid-cols-5">
         <Card className="lg:col-span-3">

@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import { requireOnboarded } from '@/lib/auth/current'
-import { canExportPrivileged, canViewPrivilegedDetail, canViewPrivilegedSummary } from '@/lib/auth/rbac'
+import { can, canExportPrivileged, canStartPrivilegedReview, canViewPrivilegedDetail, canViewPrivilegedSummary } from '@/lib/auth/rbac'
 import { parsePrivilegedSettings, privilegedPagesEnabled } from '@/lib/privileged/capability'
 import { getPrivilegedDetail, getPrivilegedSummary } from '@/lib/data/privileged'
 import { PrivilegedPage } from '@/components/privileged/privileged-page'
@@ -33,6 +33,8 @@ export default async function PrivilegedAccessPage({ searchParams }: { searchPar
       pim={pim}
       detail={detail}
       canExport={canExportPrivileged(session.role)}
+      canStartReview={canStartPrivilegedReview(session.role)}
+      canRecheck={can(session.role, 'settings.manage')}
       exportHref="/api/export?type=privileged"
       initialTab={tab}
     />

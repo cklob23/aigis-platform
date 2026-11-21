@@ -8,11 +8,58 @@ export const PRIVILEGED_NAV_LABEL = 'Privileged access'
 
 export const AZURE_RBAC_COMING_LATER = 'Coming later'
 
+export const AZURE_RBAC_FILTER_PILL = 'Azure RBAC · Coming later'
+
 export const REMEDIATION_PLACEHOLDER =
   'Remediation for privileged access will arrive in a later update. Request, approve, and mark-as-made stay on this tab when that work ships.'
 
+export const READ_ONLY_PRIVILEGED_TITLE = 'Details are limited to audit roles'
+
 export const READ_ONLY_PRIVILEGED_DESCRIPTION =
-  'Your role can see privileged totals and review dates only. Identity names, assignment detail, and export are not available.'
+  'You can see totals. Names, roles, assignments, and risk details are visible to Global Administrator, AIGIS Administrator, Security Analyst, and Auditor roles. Ask an AIGIS Administrator if you need access.'
 
 export const PRIVILEGED_DETAIL_DENIED =
   'Your role can see privileged totals only. Identity names and this profile are not available.'
+
+export const EXCLUDED_ROLES_NOTE =
+  'Not counted as privileged. Directory Readers and Guest Inviter are excluded, so holders of only those roles do not appear here or in privileged reviews.'
+
+export const TIERS_FIXED_NOTE = "Tiers are fixed. Each role's tier is set by AIGIS and cannot be changed per tenant."
+
+export const TIER_1_DEFINITION =
+  'Every other admin role, including Helpdesk Administrator, custom roles, and new built-in roles Microsoft adds later.'
+
+export const TIER_2_DEFINITION =
+  'Global Reader, Security Reader, and other built-in Reader roles except Directory Readers.'
+
+export const PIM_BANNER_TITLE = 'PIM details need Microsoft Entra ID P2'
+
+export const PIM_BANNER_BODY =
+  'This tenant has Entra ID P1, so Microsoft does not provide Privileged Identity Management data. AIGIS shows every role as active, because it cannot tell eligible from permanent.'
+
+export const PIM_STILL_WORKS = [
+  'Who holds each role',
+  'Tier 0 / 1 / 2 counts',
+  'Dormant admins',
+  'Privileged reviews (permanent assignments)',
+] as const
+
+export const PIM_NOT_AVAILABLE = [
+  'Eligible (just-in-time) assignments',
+  'Standing vs just-in-time breakdown',
+  'Time-bound assignments',
+] as const
+
+export const ENTRA_P2_DOCS = 'https://learn.microsoft.com/en-us/entra/id-governance/privileged-identity-management/pim-configure'
+
+export function privilegedDashboardCardSubtitle(holders: number, assignments: number) {
+  return `${holders} identities hold ${assignments} Entra admin role assignments. Privilege is a flag on the identity, so external identities and service principals with roles also count here.`
+}
+
+export function privilegedRolesSubtitle(privilegedRoles: number, held: number) {
+  return `${privilegedRoles} privileged roles, ${held} held in this tenant. Per role: who holds it, how many are permanent, and when it was last reviewed.`
+}
+
+export function pimUnavailableStandingLabel(assignments: number) {
+  return `all ${assignments} shown as active`
+}

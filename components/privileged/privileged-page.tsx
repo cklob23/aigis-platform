@@ -8,6 +8,8 @@ import { HoldersTable } from '@/components/privileged/holders-table'
 import { RolesTable } from '@/components/privileged/roles-table'
 import { RemediationPlaceholder } from '@/components/privileged/remediation-placeholder'
 import { PimBanner } from '@/components/privileged/pim-banner'
+import { PimRecheckButton } from '@/components/privileged/pim-recheck-button'
+import { privilegedDashboardCardSubtitle } from '@/lib/privileged/copy'
 import type { PrivilegedPimStatus } from '@/lib/types'
 import type { PrivilegedDetail } from '@/lib/privileged/view'
 
@@ -16,6 +18,8 @@ export function PrivilegedPage({
   pim,
   detail,
   canExport,
+  canStartReview,
+  canRecheck,
   exportHref,
   initialTab = 'overview',
 }: {
@@ -23,31 +27,50 @@ export function PrivilegedPage({
   pim: PrivilegedPimStatus
   detail: PrivilegedDetail
   canExport: boolean
+  canStartReview: boolean
+  canRecheck: boolean
   exportHref: string
   initialTab?: PrivilegedTab
 }) {
+  const privilegedRoles = detail.roles.filter((row) => row.isPrivileged).length
   return (
     <>
       <PageHeader
         eyebrow={tenantName}
         title="Privileged access"
-        description={`${detail.summary.holders} privileged identities across directory roles. Standing assignments, eligible (JIT), and review cadence live here.`}
+        description={privilegedDashboardCardSubtitle(detail.summary.holders, detail.summary.assignments)}
         actions={
-          canExport ? (
-            <Button variant="outline" nativeButton={false} render={<Link href={exportHref} />}>
-              Export
-            </Button>
-          ) : null
+          <>
+            {canStartReview ? (
+              <Button nativeButton={false} render={<Link href="/reviews" />}>
+                Start privileged review
+              </Button>
+            ) : null}
+            {canExport ? (
+              <Button variant="outline" nativeButton={false} render={<Link href={exportHref} />}>
+                Export CSV
+              </Button>
+            ) : null}
+          </>
         }
       />
-      <PimBanner pim={pim} />
+      <PimBanner pim={pim} recheck={<PimRecheckButton canRecheck={canRecheck} />} />
       <PrivilegedTabs
         initial={initialTab}
+        counts={{
+          holders: detail.summary.holders,
+          roles: privilegedRoles,
+          remediation: detail.summary.remediationCount,
+        }}
         panels={{
-          overview: <PrivilegedOverview summary={detail.summary} />,
+          overview: <PrivilegedOverview summary={detail.summary} highestRisk={detail.highestRisk} />,
           holders: (
             <Suspense>
-              <HoldersTable holders={detail.holders} pimAvailable={detail.summary.pimAvailable} />
+              <HoldersTable
+                holders={detail.holders}
+                pimAvailable={detail.summary.pimAvailable}
+                totalIdentities={detail.summary.holders}
+              />
             </Suspense>
           ),
           roles: <RolesTable roles={detail.roles} pimAvailable={detail.summary.pimAvailable} />,

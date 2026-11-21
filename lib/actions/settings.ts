@@ -150,6 +150,7 @@ export async function recheckPrivilegedCapability(): Promise<Result> {
       })
     }
     revalidatePath('/settings')
+    revalidatePath('/privileged')
     return { ok: true, message: 'Privileged capability rechecked' }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Failed to recheck privileged capability' }

@@ -19,4 +19,11 @@ describe('dashboard subtitle copy', () => {
     expect(DASHBOARD_SUBTITLE_GUESTS_ONLY).not.toMatch(/\u2014/)
     expect(DASHBOARD_SUBTITLE_PRIVILEGED).not.toMatch(/\u2014/)
   })
+
+  it('keeps More identity types coming under External identities, not Alerts', () => {
+    const sidebar = readFileSync(path.join(root, 'components/layout/app-sidebar.tsx'), 'utf8')
+    expect(sidebar).toContain("item.href === '/guests' &&")
+    expect(sidebar).toContain('More identity types coming')
+    expect(sidebar).not.toMatch(/Alerts[\s\S]{0,200}More identity types coming/)
+  })
 })

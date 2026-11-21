@@ -155,7 +155,7 @@ export function scorePrivilegedOverlay(
     if (standingOfTier(ctx.assignments, 1)) add(factors, 'permanent_tier1', 'Standing (permanent) Tier 1 assignment')
   }
 
-  if (isGuestPrincipal(ctx)) add(factors, 'guest_with_role', 'Guest holds a directory role')
+  if (isGuestPrincipal(ctx)) add(factors, 'guest_with_role', 'External identity with an admin role')
   if (isSpPrincipal(ctx)) add(factors, 'sp_with_role', 'Service principal holds a directory role')
 
   if (ctx.hasP1 && isDormant(ctx, now)) {
