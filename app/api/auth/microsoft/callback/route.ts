@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { absoluteUrl, exchangeCode, loginRedirectUri, openOAuthState, verifyIdToken } from '@/lib/auth/microsoft'
+import { safeAppPath } from '@/lib/auth/next-path'
 import { createSession } from '@/lib/auth/session'
 import { encryptSecret } from '@/lib/auth/crypto'
 import { db } from '@/lib/supabase/admin'
@@ -122,7 +123,9 @@ export async function GET(req: NextRequest) {
     await audit({ tenantId: tenant!.id, userId: user.id, email }, { action: 'auth.signed_in', targetType: 'user', targetId: user.id, targetLabel: email })
 
     const { data: onboarding } = await supabase.from('tenants').select('onboarding_completed_at').eq('id', tenant!.id).single()
-    const destination = onboarding?.onboarding_completed_at ? '/dashboard' : '/onboarding'
+    const destination = onboarding?.onboarding_completed_at
+      ? (safeAppPath(sealed.returnTo) ?? '/dashboard')
+      : '/onboarding'
     const res = NextResponse.redirect(await absoluteUrl(destination))
     res.cookies.delete('gs_oauth_nonce')
     return res

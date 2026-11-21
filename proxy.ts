@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { jwtVerify } from 'jose'
+import { loginNextParam } from '@/lib/auth/next-path'
 
 const PUBLIC_PREFIXES = ['/auth', '/api/auth', '/_next', '/favicon', '/icon', '/apple-icon', '/images']
 
@@ -19,7 +20,7 @@ export async function proxy(req: NextRequest) {
   }
   if (pathname.startsWith('/api/')) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   const login = new URL('/auth/login', req.url)
-  login.searchParams.set('next', pathname)
+  login.searchParams.set('next', loginNextParam(pathname, req.nextUrl.search))
   return NextResponse.redirect(login)
 }
 

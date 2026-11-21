@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Separator } from '@/components/ui/separator'
 import { Logo } from '@/components/brand/logo'
 import { getSession } from '@/lib/auth/current'
+import { safeAppPath } from '@/lib/auth/next-path'
 import { demoEnabled, microsoftConfigured } from '@/lib/env'
 import { DemoSignIn } from '@/components/auth/demo-sign-in'
 
@@ -19,12 +20,18 @@ const ERRORS: Record<string, string> = {
 }
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string; next?: string }> }) {
+  const { error, next } = await searchParams
   const session = await getSession()
-  if (session) redirect('/dashboard')
-  const { error } = await searchParams
+  if (session) redirect(safeAppPath(next) ?? '/dashboard')
   const configured = microsoftConfigured()
   const demo = demoEnabled()
   const errorText = error ? ERRORS[error] ?? decodeURIComponent(error) : null
+  const nextPath = safeAppPath(next)
+  const microsoftHref = configured
+    ? nextPath
+      ? `/api/auth/microsoft/login?next=${encodeURIComponent(nextPath)}`
+      : '/api/auth/microsoft/login'
+    : '/auth/login?error=not_configured'
 
   return (
     <main className="grid min-h-svh lg:grid-cols-[1.1fr_1fr]">
@@ -71,7 +78,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             </Alert>
           )}
 
-          <Button size="lg" className="w-full" nativeButton={false} render={<a href={configured ? '/api/auth/microsoft/login' : '/auth/login?error=not_configured'} target="_top" />}>
+          <Button size="lg" className="w-full" nativeButton={false} render={<a href={microsoftHref} target="_top" />}>
             <svg aria-hidden viewBox="0 0 21 21" className="size-4" data-icon="inline-start">
               <rect x="1" y="1" width="9" height="9" fill="#f25022" />
               <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
@@ -90,7 +97,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
                 <span className="text-muted-foreground text-xs">or</span>
                 <Separator className="flex-1" />
               </div>
-              <DemoSignIn />
+              <DemoSignIn next={nextPath} />
             </>
           )}
 

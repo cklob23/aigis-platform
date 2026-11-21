@@ -294,9 +294,10 @@ export function nextPrivilegedReviewDueAt(lastCompletedAt: string | null, cadenc
   return d.toISOString()
 }
 
+/** Same floor-day rule as privilegedReviewPastCadence: due only after the due instant is more than 0 full days ago. */
 export function privilegedReviewDueOverdue(nextDueAt: string | null, now = Date.now()) {
-  if (!nextDueAt) return false
-  return new Date(nextDueAt).getTime() < now
+  const age = daysSince(nextDueAt, now)
+  return age !== null && age > 0
 }
 
 export function summarizePrivileged(

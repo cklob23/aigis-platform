@@ -9,6 +9,7 @@ import {
   holderIdentifier,
   groupHoldersByIdentity,
   nextPrivilegedReviewDueAt,
+  privilegedReviewDueOverdue,
   summarizePrivileged,
   summaryHasIdentityNames,
   type PrivilegedAssignmentRow,
@@ -284,6 +285,19 @@ describe('nextPrivilegedReviewDueAt', () => {
     expect(nextPrivilegedReviewDueAt('2026-08-20T00:00:00.000Z')).toBe('2026-11-18T00:00:00.000Z')
     expect(nextPrivilegedReviewDueAt('2026-09-12T00:00:00.000Z')).toBe('2026-12-11T00:00:00.000Z')
     expect(nextPrivilegedReviewDueAt(null)).toBeNull()
+  })
+})
+
+describe('privilegedReviewDueOverdue', () => {
+  it('uses the same floor-day rule as identity review chips', () => {
+    const last = '2026-09-12T00:00:00.000Z'
+    const next = nextPrivilegedReviewDueAt(last)!
+    const onDueDay = Date.parse('2026-12-11T12:00:00.000Z')
+    const dayAfter = Date.parse('2026-12-12T00:00:00.000Z')
+    expect(privilegedReviewPastCadence(last, onDueDay)).toBe(false)
+    expect(privilegedReviewDueOverdue(next, onDueDay)).toBe(false)
+    expect(privilegedReviewPastCadence(last, dayAfter)).toBe(true)
+    expect(privilegedReviewDueOverdue(next, dayAfter)).toBe(true)
   })
 })
 

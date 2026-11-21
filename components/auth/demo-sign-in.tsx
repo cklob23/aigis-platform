@@ -9,7 +9,7 @@ import { ROLE_LABELS, type RoleKey } from '@/lib/auth/rbac'
 
 const DEMO_ROLES: RoleKey[] = ['gs_admin', 'security_analyst', 'auditor', 'read_only']
 
-export function DemoSignIn() {
+export function DemoSignIn({ next }: { next?: string | null }) {
   const [role, setRole] = useState<RoleKey>('gs_admin')
   const [pending, setPending] = useState(false)
 
@@ -37,6 +37,7 @@ export function DemoSignIn() {
         </Select>
       </Field>
       <input type="hidden" name="role" value={role} />
+      {next ? <input type="hidden" name="next" value={next} /> : null}
       <Button type="submit" variant="secondary" disabled={pending}>
         {pending && <Spinner data-icon="inline-start" />}
         {pending ? 'Preparing demo tenant…' : 'Open demo'}
