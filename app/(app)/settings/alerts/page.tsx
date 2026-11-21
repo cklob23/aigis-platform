@@ -9,7 +9,6 @@ import { EmailDeliveryCard } from '@/components/settings/email-delivery-card'
 import { AlertRulesList } from '@/components/settings/alert-rules-list'
 import { EmailLog } from '@/components/settings/email-log'
 import { parsePrivilegedSettings } from '@/lib/privileged/capability'
-import { DEFAULT_RISK_POLICY, type RiskPolicyConfig } from '@/lib/risk/engine'
 
 export const metadata = { title: 'Alert rules' }
 
@@ -29,7 +28,6 @@ export default async function AlertSettingsPage({ searchParams }: { searchParams
   const lastDelivery = log.find((e) => e.status !== 'skipped') ?? null
   const mailSendGranted = roles ? roles.includes('Mail.Send') : null
   const privilegedEnabled = parsePrivilegedSettings(tenant.settings).enabled
-  const reviewDays = { ...DEFAULT_RISK_POLICY, ...((tenant.settings.risk_policy as Partial<RiskPolicyConfig>) ?? {}) }.reviewDays
 
   return (
     <>
@@ -64,7 +62,6 @@ export default async function AlertSettingsPage({ searchParams }: { searchParams
             counts={Object.fromEntries(counts)}
             canManage={canManageRules}
             privilegedEnabled={privilegedEnabled}
-            reviewDays={reviewDays}
           />
         </CardContent>
       </Card>

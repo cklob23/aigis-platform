@@ -22,15 +22,15 @@ import {
   alertTriggerItems,
   showPrivilegedAlertTriggerGroup,
 } from '@/lib/alerts/triggers'
-import { DEFAULT_RISK_POLICY } from '@/lib/risk/engine'
 
 const RISK_ITEMS: Record<RiskLevel, string> = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low' }
 const ORG_STATES: ApprovalState[] = ['unreviewed', 'restricted', 'blocked']
-const SELECT_TEXT = 'h-10 w-full text-base md:h-8 md:text-sm'
+const SELECT_TEXT =
+  'h-10 w-full min-w-0 whitespace-normal text-left text-base md:h-8 md:text-sm *:data-[slot=select-value]:line-clamp-none *:data-[slot=select-value]:whitespace-normal'
 
-function toInput(rule: AlertRule | null, reviewDays: number): AlertRuleInput {
+function toInput(rule: AlertRule | null): AlertRuleInput {
   if (!rule) {
-    const defaults = alertTriggerDefaults('risk_level', reviewDays)
+    const defaults = alertTriggerDefaults('risk_level')
     return {
       name: defaults.name,
       description: defaults.description,
@@ -60,24 +60,22 @@ export function AlertRuleDialog({
   onOpenChange,
   rule,
   privilegedEnabled = false,
-  reviewDays = DEFAULT_RISK_POLICY.reviewDays,
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
   rule: AlertRule | null
   privilegedEnabled?: boolean
-  reviewDays?: number
 }) {
-  const [v, setV] = useState<AlertRuleInput>(() => toInput(rule, reviewDays))
+  const [v, setV] = useState<AlertRuleInput>(() => toInput(rule))
   const [pending, startTransition] = useTransition()
   const router = useRouter()
-  const triggerHelp = alertTriggerDescription(v.triggerType, reviewDays)
+  const triggerHelp = alertTriggerDescription(v.triggerType)
   const showPrivileged = showPrivilegedAlertTriggerGroup(privilegedEnabled, v.triggerType)
   const triggerItems = alertTriggerItems(privilegedEnabled, v.triggerType)
 
   const applyTrigger = (next: AlertTriggerType) => {
-    const prevDefaults = alertTriggerDefaults(v.triggerType, reviewDays)
-    const nextDefaults = alertTriggerDefaults(next, reviewDays)
+    const prevDefaults = alertTriggerDefaults(v.triggerType)
+    const nextDefaults = alertTriggerDefaults(next)
     const nameUntouched = !v.name.trim() || v.name === prevDefaults.name
     const descriptionUntouched = v.description === prevDefaults.description
     setV({
@@ -119,51 +117,50 @@ export function AlertRuleDialog({
               />
             </Field>
 
-            <div className="flex flex-col gap-2">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field>
-                  <FieldLabel htmlFor="rule-trigger">Trigger</FieldLabel>
-                  <Select items={triggerItems} value={v.triggerType} onValueChange={(t) => applyTrigger(t as AlertTriggerType)}>
-                    <SelectTrigger id="rule-trigger" className={SELECT_TEXT}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="min-w-[min(22rem,calc(100vw-2rem))]">
-                      {CORE_ALERT_TRIGGERS.map((t) => (
+            <Field>
+              <FieldLabel htmlFor="rule-trigger">Trigger</FieldLabel>
+              <Select items={triggerItems} value={v.triggerType} onValueChange={(t) => applyTrigger(t as AlertTriggerType)}>
+                <SelectTrigger id="rule-trigger" className={SELECT_TEXT}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="min-w-(--anchor-width)">
+                  <SelectGroup className="p-0">
+                    {CORE_ALERT_TRIGGERS.map((t) => (
+                      <SelectItem key={t} value={t} className="text-base md:text-sm">
+                        {ALERT_TRIGGER_LABELS[t].label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                  {showPrivileged && (
+                    <SelectGroup className="p-0">
+                      <SelectLabel>Privileged access</SelectLabel>
+                      {PRIVILEGED_ALERT_TRIGGERS.map((t) => (
                         <SelectItem key={t} value={t} className="text-base md:text-sm">
                           {ALERT_TRIGGER_LABELS[t].label}
                         </SelectItem>
                       ))}
-                      {showPrivileged && (
-                        <SelectGroup>
-                          <SelectLabel>Privileged access</SelectLabel>
-                          {PRIVILEGED_ALERT_TRIGGERS.map((t) => (
-                            <SelectItem key={t} value={t} className="text-base md:text-sm">
-                              {ALERT_TRIGGER_LABELS[t].label}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      )}
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="rule-severity">Alert severity</FieldLabel>
-                  <Select items={RISK_ITEMS} value={v.severity} onValueChange={(s) => setV({ ...v, severity: s as RiskLevel })}>
-                    <SelectTrigger id="rule-severity" className={SELECT_TEXT}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(Object.keys(RISK_ITEMS) as RiskLevel[]).map((r) => (
-                        <SelectItem key={r} value={r} className="text-base md:text-sm">
-                          {RISK_ITEMS[r]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </div>
+                    </SelectGroup>
+                  )}
+                </SelectContent>
+              </Select>
               <FieldDescription>{triggerHelp}</FieldDescription>
-            </div>
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="rule-severity">Alert severity</FieldLabel>
+              <Select items={RISK_ITEMS} value={v.severity} onValueChange={(s) => setV({ ...v, severity: s as RiskLevel })}>
+                <SelectTrigger id="rule-severity" className={SELECT_TEXT}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(RISK_ITEMS) as RiskLevel[]).map((r) => (
+                    <SelectItem key={r} value={r} className="text-base md:text-sm">
+                      {RISK_ITEMS[r]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
 
             {(v.triggerType === 'risk_level' || v.triggerType === 'sensitive_access') && (
               <Field>

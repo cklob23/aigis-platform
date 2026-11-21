@@ -21,13 +21,11 @@ export function AlertRulesList({
   counts,
   canManage,
   privilegedEnabled = false,
-  reviewDays,
 }: {
   rules: AlertRule[]
   counts: Counts
   canManage: boolean
   privilegedEnabled?: boolean
-  reviewDays?: number
 }) {
   const [editing, setEditing] = useState<AlertRule | null | 'new'>(null)
   const [deleting, setDeleting] = useState<AlertRule | null>(null)
@@ -149,7 +147,6 @@ export function AlertRulesList({
           onOpenChange={(o) => !o && setEditing(null)}
           rule={editing === 'new' ? null : editing}
           privilegedEnabled={privilegedEnabled}
-          reviewDays={reviewDays}
         />
       )}
 

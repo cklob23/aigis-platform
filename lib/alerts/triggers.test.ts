@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { ALERT_TRIGGER_LABELS } from '@/lib/types'
-import { DORMANT_ADMIN_DAYS } from '@/lib/risk/privileged'
+import { ALERT_TRIGGER_LABELS, type AlertTriggerType } from '@/lib/types'
+import { DORMANT_ADMIN_DAYS, PRIVILEGED_REVIEW_DAYS } from '@/lib/risk/privileged'
 import {
+  ALERT_TRIGGER_DEFAULT_DESCRIPTION,
   PRIVILEGED_ALERT_TRIGGERS,
   alertTriggerDefaults,
   alertTriggerDescription,
@@ -40,7 +41,10 @@ describe('privileged alert trigger UI', () => {
       description: 'An external identity holds a privileged directory role (any tier).',
     })
     expect(ALERT_TRIGGER_LABELS.dormant_admin.label).toBe('Dormant privileged account')
-    expect(ALERT_TRIGGER_LABELS.privileged_not_reviewed.label).toBe('Privileged access overdue for review')
+    expect(ALERT_TRIGGER_LABELS.privileged_not_reviewed).toEqual({
+      label: 'Privileged access overdue for review',
+      description: `Not reviewed in the last ${PRIVILEGED_REVIEW_DAYS} days.`,
+    })
     expect(ALERT_TRIGGER_LABELS.privileged_change_not_seen).toEqual({
       label: 'Approved change not seen on scan',
       description: "A change marked as made in Microsoft wasn't detected on the next scan.",
@@ -52,7 +56,7 @@ describe('privileged alert trigger UI', () => {
     }
   })
 
-  it('defaults name and description to the selected trigger, using real thresholds', () => {
+  it('defaults name and description to what the rule means, with no Settings instructions', () => {
     expect(alertTriggerDefaults('new_tier0_assignment')).toEqual({
       name: 'New Tier 0 role assignment',
       description: 'Someone was given a Tier 0 role since the last scan.',
@@ -60,11 +64,17 @@ describe('privileged alert trigger UI', () => {
     expect(alertTriggerDescription('dormant_admin')).toBe(
       `Holds a privileged role and hasn't signed in for ${DORMANT_ADMIN_DAYS} days.`,
     )
-    expect(alertTriggerDescription('privileged_not_reviewed', 365)).toBe(
-      'Not reviewed in the last 365 days. Change this under Settings, Review every (days).',
+    expect(alertTriggerDescription('privileged_not_reviewed')).toBe(
+      `Not reviewed in the last ${PRIVILEGED_REVIEW_DAYS} days.`,
     )
-    expect(alertTriggerDescription('privileged_not_reviewed', 90)).toBe(
-      'Not reviewed in the last 90 days. Change this under Settings, Review every (days).',
-    )
+    expect(alertTriggerDefaults('privileged_not_reviewed')).toEqual({
+      name: 'Privileged access overdue for review',
+      description: `Privileged access not reviewed in the last ${PRIVILEGED_REVIEW_DAYS} days.`,
+    })
+    for (const type of Object.keys(ALERT_TRIGGER_DEFAULT_DESCRIPTION) as AlertTriggerType[]) {
+      const { description } = alertTriggerDefaults(type)
+      expect(description).not.toMatch(/Settings|Change this|Turn on/)
+      expect(description).not.toMatch(/\u2014/)
+    }
   })
 })

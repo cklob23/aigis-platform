@@ -7,7 +7,6 @@ import { requireIdentityId } from '@/lib/identity/governance'
 import { persistNewAlerts, stampAlertEmail } from '@/lib/alerts/persist'
 import { fetchAllById } from '@/lib/supabase/page'
 import { parsePrivilegedSettings } from '@/lib/privileged/capability'
-import { DEFAULT_RISK_POLICY } from '@/lib/risk/engine'
 import {
   dormantAdminCandidates,
   guestWithRoleCandidates,
@@ -378,8 +377,7 @@ async function privilegedCandidates(rule: AlertRule, ctx: Ctx): Promise<Candidat
     return dormantAdminCandidates(identities, ctx.now).map((row) => toCandidate(row, 'dormant'))
   }
   if (rule.trigger_type === 'privileged_not_reviewed') {
-    const reviewDays = (ctx.tenantSettings?.risk_policy as { reviewDays?: number } | undefined)?.reviewDays ?? DEFAULT_RISK_POLICY.reviewDays
-    return privilegedNotReviewedCandidates(identities, ctx.now, reviewDays).map((row) => toCandidate(row, 'unreviewed'))
+    return privilegedNotReviewedCandidates(identities, ctx.now).map((row) => toCandidate(row, 'unreviewed'))
   }
 
   const assignmentRows = await fetchAllById<{

@@ -404,7 +404,7 @@ export const ALERT_TRIGGER_LABELS: Record<AlertTriggerType, { label: string; des
   new_tier0_assignment: { label: 'New Tier 0 role assignment', description: 'Someone was given a Tier 0 role since the last scan.' },
   guest_with_role: { label: 'External identity with an admin role', description: 'An external identity holds a privileged directory role (any tier).' },
   dormant_admin: { label: 'Dormant privileged account', description: "Holds a privileged role and hasn't signed in for 90 days." },
-  privileged_not_reviewed: { label: 'Privileged access overdue for review', description: 'Not reviewed in the last 365 days. Change this under Settings, Review every (days).' },
+  privileged_not_reviewed: { label: 'Privileged access overdue for review', description: 'Not reviewed in the last 90 days.' },
   privileged_change_not_seen: { label: 'Approved change not seen on scan', description: "A change marked as made in Microsoft wasn't detected on the next scan." },
 }
 

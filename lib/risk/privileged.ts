@@ -41,6 +41,8 @@ export const OVERLAY_POINTS = {
 } as const
 
 export const DORMANT_ADMIN_DAYS = 90
+/** Privileged access review cadence. Independent of tenant Review every (days). */
+export const PRIVILEGED_REVIEW_DAYS = 90
 export const DAILY_USE_DAYS = 7
 export const GLOBAL_ADMIN_SOFT_CAP = 5
 

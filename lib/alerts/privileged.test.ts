@@ -18,7 +18,7 @@ function identity(partial: Partial<PrivilegedAlertIdentity> = {}): PrivilegedAle
     primary_email: 'adele@contoso.com',
     is_privileged: true,
     last_activity_at: '2026-11-20T00:00:00.000Z',
-    last_reviewed_at: '2026-06-01T00:00:00.000Z',
+    last_reviewed_at: '2026-10-01T00:00:00.000Z',
     first_seen_at: '2026-01-01T00:00:00.000Z',
     status: 'active',
     ...partial,
@@ -57,10 +57,11 @@ describe('privileged alert candidates', () => {
     expect(dormantAdminCandidates([identity()], NOW)).toHaveLength(0)
   })
 
-  it('fires privileged_not_reviewed when never reviewed or overdue', () => {
-    expect(privilegedNotReviewedCandidates([identity({ last_reviewed_at: null })], NOW, 365)).toHaveLength(1)
-    expect(privilegedNotReviewedCandidates([identity({ last_reviewed_at: '2024-01-01T00:00:00.000Z' })], NOW, 365)).toHaveLength(1)
-    expect(privilegedNotReviewedCandidates([identity()], NOW, 365)).toHaveLength(0)
+  it('fires privileged_not_reviewed on a fixed 90-day cadence, not tenant reviewDays', () => {
+    expect(privilegedNotReviewedCandidates([identity({ last_reviewed_at: null })], NOW)).toHaveLength(1)
+    expect(privilegedNotReviewedCandidates([identity({ last_reviewed_at: '2026-08-22T00:00:00.000Z' })], NOW)).toHaveLength(1)
+    expect(privilegedNotReviewedCandidates([identity({ last_reviewed_at: '2026-08-24T00:00:00.000Z' })], NOW)).toHaveLength(0)
+    expect(privilegedNotReviewedCandidates([identity()], NOW)).toHaveLength(0)
   })
 
   it('fires privileged_change_not_seen for standing T0 when P2 is available', () => {
