@@ -83,7 +83,7 @@ export async function persistMembershipUpserts(
   for (const batch of chunk(rows, 500)) {
     mustWrite('resource_memberships upsert', await upsertBatch(batch))
   }
-  if (removedIds.length) {
-    mustWrite('resource_memberships soft-remove', await removeGone(removedIds))
+  for (const batch of chunk(removedIds, 500)) {
+    mustWrite('resource_memberships soft-remove', await removeGone(batch))
   }
 }

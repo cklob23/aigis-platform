@@ -38,6 +38,8 @@ import { requireIdentityId, withMembershipIds } from '@/lib/identity/governance'
 import { loadGovernanceMaps } from '@/lib/identity/governance-maps'
 import { evaluateAlertRules } from '@/lib/alerts/evaluate'
 import { applyScanAlertResults } from '@/lib/scan/alerts'
+import { membershipsByGuestForRisk, planMembershipReconcile } from '@/lib/scan/memberships'
+import { fetchAllById } from '@/lib/supabase/page'
 import { mustWrite } from '@/lib/supabase/write'
 import {
   persistGuestRiskUpdates,
@@ -79,28 +81,29 @@ export async function createScanJob(tenantId: string, scanType: string, startedB
 /** Re-scores every guest for the tenant from the local inventory. Used by live scans and demo tenants. */
 export async function rescoreTenant(tenantId: string, scanJobId: string | null, policy: RiskPolicyConfig = DEFAULT_RISK_POLICY) {
   const supabase = db()
-  const [{ data: guests }, { data: domains }, { data: memberships }, { data: resources }] = await Promise.all([
-    supabase.from('guest_identities').select('*').eq('tenant_id', tenantId).is('removed_at', null),
-    supabase.from('external_domains').select('id,domain,classification').eq('tenant_id', tenantId),
-    supabase.from('resource_memberships').select('guest_id,resource_id,membership_type').eq('tenant_id', tenantId).is('removed_at', null),
-    supabase.from('resources').select('id,resource_type,is_sensitive').eq('tenant_id', tenantId).is('removed_at', null),
+  const [guests, domains, memberships, resources] = await Promise.all([
+    fetchAllById<Guest>('guest_identities rescore', () =>
+      supabase.from('guest_identities').select('*').eq('tenant_id', tenantId).is('removed_at', null),
+    ),
+    fetchAllById<{ id: string; domain: string; classification: DomainClassification }>('external_domains rescore', () =>
+      supabase.from('external_domains').select('id,domain,classification').eq('tenant_id', tenantId),
+    ),
+    fetchAllById<{ guest_id: string; resource_id: string; membership_type: string }>('resource_memberships rescore', () =>
+      supabase.from('resource_memberships').select('guest_id,resource_id,membership_type').eq('tenant_id', tenantId).is('removed_at', null),
+    ),
+    fetchAllById<{ id: string; resource_type: string; is_sensitive: boolean | null }>('resources rescore', () =>
+      supabase.from('resources').select('id,resource_type,is_sensitive').eq('tenant_id', tenantId).is('removed_at', null),
+    ),
   ])
-  const domainMap = new Map((domains ?? []).map((d) => [d.domain as string, d.classification as DomainClassification]))
-  const resourceMap = new Map((resources ?? []).map((r) => [r.id as string, r]))
-  const byGuest = new Map<string, { isSensitive: boolean; isOwner: boolean; type: string }[]>()
-  for (const m of memberships ?? []) {
-    const r = resourceMap.get(m.resource_id as string)
-    if (!r) continue
-    const list = byGuest.get(m.guest_id as string) ?? []
-    list.push({ isSensitive: Boolean(r.is_sensitive), isOwner: m.membership_type === 'owner', type: r.resource_type as string })
-    byGuest.set(m.guest_id as string, list)
-  }
+  const domainMap = new Map(domains.map((d) => [d.domain, d.classification]))
+  const resourceMap = new Map(resources.map((r) => [r.id, r]))
+  const byGuest = membershipsByGuestForRisk(memberships, resourceMap)
 
   const updates: Partial<Guest>[] = []
   const identityUpdates: { id: string; risk_score: number; risk_level: Guest['risk_level']; recommended_action: Guest['recommended_action'] }[] = []
   const scoreRows: Record<string, unknown>[] = []
   const counts = { critical: 0, high: 0, medium: 0, low: 0 }
-  for (const g of (guests ?? []) as Guest[]) {
+  for (const g of guests) {
     const identityId = requireIdentityId(g)
     const risk = computeIdentityRisk(
       g.identity_class ?? 'external',
@@ -154,13 +157,35 @@ export async function rescoreTenant(tenantId: string, scanJobId: string | null, 
 
 export async function snapshotMetrics(tenantId: string, scanJobId: string | null) {
   const supabase = db()
-  const [guests, domains, resources, memberships] = await Promise.all([
-    supabase.from('guest_identities').select('risk_level,account_enabled,last_sign_in_at,invitation_status,sponsor_ms_object_id,review_status').eq('tenant_id', tenantId).is('removed_at', null),
-    supabase.from('external_domains').select('classification').eq('tenant_id', tenantId),
-    supabase.from('resources').select('resource_type,is_sensitive,external_member_count').eq('tenant_id', tenantId).is('removed_at', null),
+  const [g, domains, resources, memberships] = await Promise.all([
+    fetchAllById<{
+      risk_level: string | null
+      account_enabled: boolean | null
+      last_sign_in_at: string | null
+      invitation_status: string | null
+      sponsor_ms_object_id: string | null
+      review_status: string | null
+    }>('guest_identities snapshot', () =>
+      supabase
+        .from('guest_identities')
+        .select('risk_level,account_enabled,last_sign_in_at,invitation_status,sponsor_ms_object_id,review_status')
+        .eq('tenant_id', tenantId)
+        .is('removed_at', null),
+    ),
+    fetchAllById<{ classification: string | null }>('external_domains snapshot', () =>
+      supabase.from('external_domains').select('classification').eq('tenant_id', tenantId),
+    ),
+    fetchAllById<{ resource_type: string; is_sensitive: boolean | null; external_member_count: number | null }>(
+      'resources snapshot',
+      () =>
+        supabase
+          .from('resources')
+          .select('resource_type,is_sensitive,external_member_count')
+          .eq('tenant_id', tenantId)
+          .is('removed_at', null),
+    ),
     supabase.from('resource_memberships').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).is('removed_at', null),
   ])
-  const g = guests.data ?? []
   const cutoff = Date.now() - 90 * 86_400_000
   const snapshot = {
     total_guests: g.length,
@@ -173,10 +198,10 @@ export async function snapshotMetrics(tenantId: string, scanJobId: string | null
     pending_invites: g.filter((x) => x.invitation_status === 'PendingAcceptance').length,
     no_sponsor: g.filter((x) => !x.sponsor_ms_object_id).length,
     disabled: g.filter((x) => !x.account_enabled).length,
-    domains: domains.data?.length ?? 0,
-    unknown_domains: (domains.data ?? []).filter((d) => d.classification === 'unknown').length,
-    resources_with_guests: (resources.data ?? []).filter((r) => (r.external_member_count ?? 0) > 0).length,
-    sensitive_with_guests: (resources.data ?? []).filter((r) => r.is_sensitive && (r.external_member_count ?? 0) > 0).length,
+    domains: domains.length,
+    unknown_domains: domains.filter((d) => d.classification === 'unknown').length,
+    resources_with_guests: resources.filter((r) => (r.external_member_count ?? 0) > 0).length,
+    sensitive_with_guests: resources.filter((r) => r.is_sensitive && (r.external_member_count ?? 0) > 0).length,
     memberships: memberships.count ?? 0,
   }
   mustWrite('scan_results insert', await supabase.from('scan_results').insert({ tenant_id: tenantId, scan_job_id: scanJobId, snapshot }))
@@ -187,13 +212,23 @@ export async function generateFindings(tenantId: string) {
   const supabase = db()
   const resolveOpen = () =>
     supabase.from('risk_findings').update({ status: 'resolved', resolved_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('status', 'open')
-  const { data: guests } = await supabase
-    .from('guest_identities')
-    .select('id,identity_id,display_name,email,risk_level,risk_factors,domain')
-    .eq('tenant_id', tenantId)
-    .is('removed_at', null)
-    .in('risk_level', ['critical', 'high'])
-  const rows = (guests ?? []).flatMap((g) => {
+  const guests = await fetchAllById<{
+    id: string
+    identity_id: string | null
+    display_name: string | null
+    email: string | null
+    risk_level: string
+    risk_factors: unknown
+    domain: string | null
+  }>('guest_identities findings', () =>
+    supabase
+      .from('guest_identities')
+      .select('id,identity_id,display_name,email,risk_level,risk_factors,domain')
+      .eq('tenant_id', tenantId)
+      .is('removed_at', null)
+      .in('risk_level', ['critical', 'high']),
+  )
+  const rows = guests.flatMap((g) => {
     const factors = (g.risk_factors as { key: string; label: string; points: number }[]) ?? []
     const top = [...factors].sort((a, b) => b.points - a.points)[0]
     if (!top) return []
@@ -271,8 +306,11 @@ export async function runScan(jobId: string, tenantId: string) {
         // Every domain belongs to exactly one external organization. Domains that
         // appear for the first time get an organization auto-created from the most
         // common companyName on their identities (falling back to the domain itself).
-        const { data: domainRows } = await supabase.from('external_domains').select('id,domain,organization_id').eq('tenant_id', tenantId)
-        const orphanDomains = (domainRows ?? []).filter((d) => !d.organization_id)
+        const domainRows = await fetchAllById<{ id: string; domain: string; organization_id: string | null }>(
+          'external_domains scan',
+          () => supabase.from('external_domains').select('id,domain,organization_id').eq('tenant_id', tenantId),
+        )
+        const orphanDomains = domainRows.filter((d) => !d.organization_id)
         if (orphanDomains.length) {
           const orgInserts = orphanDomains.map((d) => ({
             tenant_id: tenantId,
@@ -292,12 +330,19 @@ export async function runScan(jobId: string, tenantId: string) {
             )
           }
         }
-        const { data: linkedDomains } = await supabase
-          .from('external_domains')
-          .select('id,domain,organization_id, organization:external_organizations(id,relationship_type)')
-          .eq('tenant_id', tenantId)
-        for (const d of linkedDomains ?? []) {
-          domainIdByName.set(d.domain as string, d.id as string)
+        const linkedDomains = await fetchAllById<{
+          id: string
+          domain: string
+          organization_id: string | null
+          organization: unknown
+        }>('external_domains linked', () =>
+          supabase
+            .from('external_domains')
+            .select('id,domain,organization_id, organization:external_organizations(id,relationship_type)')
+            .eq('tenant_id', tenantId),
+        )
+        for (const d of linkedDomains) {
+          domainIdByName.set(d.domain, d.id)
           const org = d.organization as unknown as { id: string; relationship_type: RelationshipType } | null
           if (org) orgByDomain.set(d.domain as string, org)
         }
@@ -351,8 +396,14 @@ export async function runScan(jobId: string, tenantId: string) {
           sponsor_enabled: sponsor?.accountEnabled ?? null,
         }
       })
-      const { data: existingGuests } = await supabase.from('guest_identities').select('id,ms_object_id,identity_id,removed_at').eq('tenant_id', tenantId)
-      const existingGuestRows = (existingGuests ?? []) as { id: string; ms_object_id: string; identity_id: string | null; removed_at: string | null }[]
+      const existingGuestRows = await fetchAllById<{
+        id: string
+        ms_object_id: string
+        identity_id: string | null
+        removed_at: string | null
+      }>('guest_identities existing', () =>
+        supabase.from('guest_identities').select('id,ms_object_id,identity_id,removed_at').eq('tenant_id', tenantId),
+      )
       let inventory = planGuestInventory({
         tenantId,
         now,
@@ -370,15 +421,19 @@ export async function runScan(jobId: string, tenantId: string) {
       if (privilegedOn) {
         await progress('privileged', 29, 'Inventorying internal users…')
         const internalPlan = await runPrivilegedStage(jobId, tenantId, g, tenant.settings as Record<string, unknown>)
-        const { data: guestsAfterInternals } = await supabase
-          .from('guest_identities')
-          .select('id,ms_object_id,identity_id,removed_at')
-          .eq('tenant_id', tenantId)
+        const guestsAfterInternals = await fetchAllById<{
+          id: string
+          ms_object_id: string
+          identity_id: string | null
+          removed_at: string | null
+        }>('guest_identities after internals', () =>
+          supabase.from('guest_identities').select('id,ms_object_id,identity_id,removed_at').eq('tenant_id', tenantId),
+        )
         inventory = planGuestInventory({
           tenantId,
           now,
           incoming,
-          existing: (guestsAfterInternals ?? []) as { id: string; ms_object_id: string; identity_id: string | null; removed_at: string | null }[],
+          existing: guestsAfterInternals,
           internals: internalPlan.accounts.map((account) => {
             const identity = internalPlan.identities.find((row) => row.id === account.identity_id)
             return {
@@ -426,8 +481,11 @@ export async function runScan(jobId: string, tenantId: string) {
       await progress('groups', 48, `${groups.length} groups inventoried`, 'done')
 
       await progress('memberships', 50, 'Resolving guest memberships…')
-      const { data: resourceRowsDb } = await supabase.from('resources').select('id,ms_object_id,resource_type').eq('tenant_id', tenantId).is('removed_at', null)
-      const resourceIdByMs = new Map((resourceRowsDb ?? []).map((r) => [`${r.resource_type}:${r.ms_object_id}`, r.id as string]))
+      const resourceRowsDb = await fetchAllById<{ id: string; ms_object_id: string; resource_type: string }>(
+        'resources scan',
+        () => supabase.from('resources').select('id,ms_object_id,resource_type').eq('tenant_id', tenantId).is('removed_at', null),
+      )
+      const resourceIdByMs = new Map(resourceRowsDb.map((r) => [`${r.resource_type}:${r.ms_object_id}`, r.id]))
       const membershipRows: Record<string, unknown>[] = []
       const counts = new Map<string, { internal: number; external: number; owners: { id: string; displayName: string; mail?: string }[] }>()
       let processed = 0
@@ -571,18 +629,19 @@ export async function runScan(jobId: string, tenantId: string) {
       }
       await progress('apps', 88, 'Enterprise apps checked', 'done')
 
-      const { data: priorMemberships } = await supabase.from('resource_memberships').select('id,guest_id,resource_id').eq('tenant_id', tenantId).is('removed_at', null)
-      const priorKeys = new Set((priorMemberships ?? []).map((m) => `${m.guest_id}:${m.resource_id}`))
-      const incomingKeys = new Set(membershipRows.map((m) => `${m.guest_id}:${m.resource_id}`))
+      const priorMemberships = await fetchAllById<{ id: string; guest_id: string; resource_id: string }>(
+        'resource_memberships prior',
+        () => supabase.from('resource_memberships').select('id,guest_id,resource_id').eq('tenant_id', tenantId).is('removed_at', null),
+      )
       const dedup = Array.from(new Map(membershipRows.map((m) => [`${m.guest_id}:${m.resource_id}`, m])).values())
-      const removedMembershipIds = (priorMemberships ?? []).filter((m) => !incomingKeys.has(`${m.guest_id}:${m.resource_id}`)).map((m) => m.id as string)
+      const { removedIds: removedMembershipIds, newCount } = planMembershipReconcile(priorMemberships, dedup)
       await persistMembershipUpserts(
         (batch) => supabase.from('resource_memberships').upsert(batch, { onConflict: 'tenant_id,guest_id,resource_id' }),
         (ids) => supabase.from('resource_memberships').update({ removed_at: now }).in('id', ids),
         dedup,
         removedMembershipIds,
       )
-      summary.new_memberships = dedup.filter((m) => !priorKeys.has(`${m.guest_id}:${m.resource_id}`)).length
+      summary.new_memberships = newCount
       summary.removed_memberships = removedMembershipIds.length
       summary.memberships = dedup.length
     }
