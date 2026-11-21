@@ -105,16 +105,16 @@ export function PrivilegedOverview({
                   </TableBody>
                 </Table>
               </div>
-              <div className="flex flex-col divide-y sm:hidden">
+              <div className="flex flex-col gap-2 sm:hidden">
                 {([0, 1, 2] as const).map((tier) => {
                   const row = tier === 0 ? summary.byTierAssignments.t0 : tier === 1 ? summary.byTierAssignments.t1 : summary.byTierAssignments.t2
                   return (
-                    <div key={tier} className="flex flex-col gap-1 py-2 first:pt-0 last:pb-0">
+                    <div key={tier} className="flex flex-wrap items-center gap-1.5">
                       <TierBadge tier={tier} />
-                      <p className="text-muted-foreground text-xs">
-                        Holders {formatNumber(row.holders)} · Permanent {formatNumber(row.permanent)} · Eligible{' '}
-                        {formatNumber(row.eligible)} · Time-bound {formatNumber(row.timeBound)}
-                      </p>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs">Holders {formatNumber(row.holders)}</span>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs">Permanent {formatNumber(row.permanent)}</span>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs">Eligible {formatNumber(row.eligible)}</span>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs">Time-bound {formatNumber(row.timeBound)}</span>
                     </div>
                   )
                 })}
@@ -216,18 +216,25 @@ function CountRow({ label, value }: { label: string; value: number }) {
   )
 }
 
-function HighestRiskChips({ row }: { row: PrivilegedHighestRisk }) {
+const REVIEW_CHIP =
+  'rounded bg-[#FEF3C7] px-1 text-[10px] font-medium text-[#B45309] dark:bg-warning/15 dark:text-[#F5AE39]'
+
+function ReviewStatus({ row }: { row: PrivilegedHighestRisk }) {
   const neverReviewed = !row.lastReviewedAt
   const overdue = privilegedReviewPastCadence(row.lastReviewedAt)
+  if (neverReviewed) return <span className={REVIEW_CHIP}>Never reviewed</span>
+  if (overdue) return <span className={REVIEW_CHIP}>Review overdue</span>
+  return null
+}
+
+function HighestRiskRoles({ names }: { names: string[] }) {
+  const [first, ...rest] = names
+  if (!first) return <span className="text-muted-foreground">—</span>
   return (
-    <div className="flex flex-wrap items-center gap-1">
-      <RiskBadge level={row.riskLevel} />
-      <span className="tnum text-xs">{row.riskScore}</span>
-      {neverReviewed && <span className="rounded bg-[#FEF3C7] px-1 text-[10px] font-medium text-[#B45309]">Never reviewed</span>}
-      {overdue && !neverReviewed && (
-        <span className="rounded bg-[#FEF3C7] px-1 text-[10px] font-medium text-[#B45309]">Review overdue</span>
-      )}
-    </div>
+    <span className="inline-flex max-w-[11rem] items-baseline gap-1">
+      <span className="truncate">{first}</span>
+      {rest.length > 0 ? <span className="shrink-0 text-muted-foreground">+{rest.length}</span> : null}
+    </span>
   )
 }
 
@@ -246,10 +253,20 @@ function HighestRiskRow({ row }: { row: PrivilegedHighestRisk }) {
       <TableCell>
         <TierBadge tier={row.privilegeTier} />
       </TableCell>
-      <TableCell className="max-w-56 truncate text-sm">{row.roleNames.join(', ')}</TableCell>
-      <TableCell className={dormant ? 'tnum text-destructive' : 'tnum'}>{relativeDays(row.lastActivityAt)}</TableCell>
       <TableCell>
-        <HighestRiskChips row={row} />
+        <HighestRiskRoles names={row.roleNames} />
+      </TableCell>
+      <TableCell className="whitespace-normal">
+        <div className="flex flex-col items-start gap-0.5">
+          <span className={dormant ? 'tnum whitespace-nowrap text-destructive' : 'tnum whitespace-nowrap'}>{relativeDays(row.lastActivityAt)}</span>
+          <ReviewStatus row={row} />
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-1 whitespace-nowrap">
+          <RiskBadge level={row.riskLevel} />
+          <span className="tnum text-xs">{row.riskScore}</span>
+        </div>
       </TableCell>
     </TableRow>
   )
@@ -263,9 +280,14 @@ function HighestRiskStacked({ row }: { row: PrivilegedHighestRisk }) {
         <span className="truncate font-mono text-muted-foreground text-xs">{row.identifier}</span>
       </Link>
       <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs">{privilegedClassLabel(row.identityClass, row.dedicatedAdmin)}</span>
         <TierBadge tier={row.privilegeTier} />
-        <span className="text-sm">{row.roleNames.join(', ')}</span>
-        <HighestRiskChips row={row} />
+        <HighestRiskRoles names={row.roleNames} />
+        <div className="flex items-center gap-1">
+          <RiskBadge level={row.riskLevel} />
+          <span className="tnum text-xs">{row.riskScore}</span>
+        </div>
+        <ReviewStatus row={row} />
       </div>
     </div>
   )

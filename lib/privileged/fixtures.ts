@@ -18,8 +18,11 @@ import {
 } from '@/lib/privileged/view'
 
 const NOW = Date.parse('2026-11-21T12:00:00.000Z')
-const LAST_REVIEW = '2026-08-20T00:00:00.000Z'
+const LAST_REVIEW = '2026-09-12T00:00:00.000Z'
 const PRA_REVIEW = '2026-07-01T00:00:00.000Z'
+const OVERDUE_PRIYA = '2026-07-22T00:00:00.000Z'
+const OVERDUE_GRADY = '2026-08-01T00:00:00.000Z'
+const OVERDUE_HR_SYNC = '2026-08-08T00:00:00.000Z'
 
 function identity(
   id: string,
@@ -117,6 +120,7 @@ const P2_IDENTITIES: PrivilegedIdentityRow[] = [
   }),
   identity('id-priya', 'Priya Nair', 'priya.nair@northwind.example', 'human_internal', 0, {
     auth_methods: [],
+    last_reviewed_at: OVERDUE_PRIYA,
     last_activity_at: '2026-11-07T00:00:00.000Z',
     risk_score: 82,
     risk_level: 'critical',
@@ -128,7 +132,7 @@ const P2_IDENTITIES: PrivilegedIdentityRow[] = [
   }),
   identity('id-grady', 'Grady Archie', 'grady.archie@fabrikam.example', 'external', 1, {
     auth_methods: [],
-    last_reviewed_at: '2026-09-01T00:00:00.000Z',
+    last_reviewed_at: OVERDUE_GRADY,
     last_activity_at: '2026-08-16T00:00:00.000Z',
     risk_score: 76,
     risk_level: 'high',
@@ -141,6 +145,7 @@ const P2_IDENTITIES: PrivilegedIdentityRow[] = [
   identity('id-hr-sync', 'Contoso-HR-Sync', null, 'non_human', 0, {
     auth_methods: null,
     app_id: '7f3c9a12-4d80-4c2e-9a11-0c8e4f00b21e',
+    last_reviewed_at: OVERDUE_HR_SYNC,
     last_activity_at: '2026-11-17T18:00:00.000Z',
     risk_score: 79,
     risk_level: 'high',
@@ -262,6 +267,7 @@ function assignment(
 const P2_ASSIGNMENTS: PrivilegedAssignmentRow[] = [
   assignment('asg-adele-ga', 'id-adele', 'role-ga'),
   assignment('elig-adele-ga', 'id-adele', 'role-ga', { assignment_type: 'eligible', pim_status: 'Provisioned' }),
+  assignment('asg-adele-helpdesk', 'id-adele', 'role-helpdesk'),
   assignment('asg-lee-pra', 'id-lee', 'role-pra'),
   assignment('asg-priya-paa', 'id-priya', 'role-paa'),
   assignment('elig-megan-user', 'id-megan', 'role-user-admin', { assignment_type: 'eligible', pim_status: 'Provisioned' }),
@@ -440,7 +446,7 @@ function p2Summary(computed: PrivilegedSummary): PrivilegedSummary {
       viaGroups: 11,
     },
     neverReviewed: 6,
-    overdueReviews: 4,
+    overdueReviews: computed.overdueReviews,
     dormant: 7,
     findings: computed.findings,
     reviews: fixtureReviews(5, 2),
@@ -477,8 +483,8 @@ function noP2Summary(computed: PrivilegedSummary): PrivilegedSummary {
       servicePrincipals: 0,
       viaGroups: 3,
     },
-    neverReviewed: 2,
-    overdueReviews: 1,
+    neverReviewed: computed.neverReviewed,
+    overdueReviews: computed.overdueReviews,
     dormant: 4,
     findings: computed.findings,
     reviews: fixtureReviews(0, 0),

@@ -7,6 +7,7 @@ import {
   combinedStateLabel,
   filterHolders,
   holderIdentifier,
+  groupHoldersByIdentity,
   nextPrivilegedReviewDueAt,
   summarizePrivileged,
   summaryHasIdentityNames,
@@ -15,6 +16,7 @@ import {
   type PrivilegedRoleRow,
 } from '@/lib/privileged/view'
 import { privilegedFixture } from '@/lib/privileged/fixtures'
+import { privilegedReviewPastCadence } from '@/lib/risk/privileged'
 import { canExportPrivileged } from '@/lib/auth/rbac'
 import { TIER_0_DIRECTORY_ROLES } from '@/lib/privileged/tiers'
 
@@ -218,8 +220,8 @@ describe('P2 fixture totals', () => {
     expect(summary.timeBound).toBe(7)
     expect(summary.overdueReviews).toBe(4)
     expect(summary.neverReviewed).toBe(6)
-    expect(summary.reviews.lastCompletedAt).toBe('2026-08-20T00:00:00.000Z')
-    expect(summary.reviews.nextDueAt).toBe('2026-11-18T00:00:00.000Z')
+    expect(summary.reviews.lastCompletedAt).toBe('2026-09-12T00:00:00.000Z')
+    expect(summary.reviews.nextDueAt).toBe('2026-12-11T00:00:00.000Z')
     expect(summary.remediationCount).toBe(0)
     expect(summary.findings.find((row) => row.finding_type === 'permanent_tier0')?.title).toBe('Permanent Tier 0 assignment')
   })
@@ -242,12 +244,45 @@ describe('Fabrikam no-P2 fixture', () => {
     expect(detail.holders.some((row) => row.displayName === 'Contoso-HR-Sync')).toBe(false)
     expect(detail.summary.holders).toBe(52)
     expect(detail.summary.assignments).toBe(74)
+    expect(detail.summary.overdueReviews).toBe(1)
+    expect(detail.summary.neverReviewed).toBe(2)
+  })
+})
+
+describe('review flags match card counts', () => {
+  const now = Date.parse('2026-11-21T12:00:00.000Z')
+
+  it('flags only the four overdue Northwind identities', () => {
+    const detail = privilegedFixture(true, now)
+    const overdueIds = new Set(
+      detail.holders.filter((row) => privilegedReviewPastCadence(row.lastReviewedAt, now)).map((row) => row.identityId),
+    )
+    expect(overdueIds.size).toBe(4)
+    expect(overdueIds.size).toBe(detail.summary.overdueReviews)
+    const grouped = groupHoldersByIdentity(detail.holders)
+    expect(grouped.find((row) => row.displayName === 'Adele Vance')?.roleNames).toEqual([
+      'Global Administrator',
+      'Helpdesk Administrator',
+    ])
+  })
+
+  it('flags only Lee as overdue on Fabrikam highest-risk rows', () => {
+    const detail = privilegedFixture(false, now)
+    const overdueIds = new Set(
+      detail.holders.filter((row) => privilegedReviewPastCadence(row.lastReviewedAt, now)).map((row) => row.identityId),
+    )
+    expect(overdueIds.size).toBe(1)
+    expect(overdueIds.size).toBe(detail.summary.overdueReviews)
+    const overdueHighest = detail.highestRisk.filter((row) => privilegedReviewPastCadence(row.lastReviewedAt, now))
+    expect(overdueHighest).toHaveLength(1)
+    expect(overdueHighest[0]?.displayName).toBe('Lee Gu')
   })
 })
 
 describe('nextPrivilegedReviewDueAt', () => {
   it('adds 90 days to last completed', () => {
     expect(nextPrivilegedReviewDueAt('2026-08-20T00:00:00.000Z')).toBe('2026-11-18T00:00:00.000Z')
+    expect(nextPrivilegedReviewDueAt('2026-09-12T00:00:00.000Z')).toBe('2026-12-11T00:00:00.000Z')
     expect(nextPrivilegedReviewDueAt(null)).toBeNull()
   })
 })

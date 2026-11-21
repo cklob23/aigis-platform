@@ -44,7 +44,7 @@ export function PrivilegedReviewsCard({
         </div>
         <div className="flex flex-col gap-0.5">
           <span className="text-muted-foreground text-xs uppercase tracking-wide">Next due</span>
-          <span className={overdue ? 'tnum font-medium text-[#B45309]' : 'tnum font-medium'}>{nextDue}</span>
+          <span className={overdue ? 'tnum font-medium text-warning' : 'tnum font-medium'}>{nextDue}</span>
         </div>
         <div className="flex flex-col gap-0.5">
           <span className="text-muted-foreground text-xs uppercase tracking-wide">Open requests</span>

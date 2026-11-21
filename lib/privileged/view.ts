@@ -615,6 +615,25 @@ export function uniqueHolderCount(holders: PrivilegedHolder[]) {
   return new Set(holders.map((row) => row.identityId)).size
 }
 
+export type PrivilegedHolderGroup = PrivilegedHolder & { roleNames: string[] }
+
+/** One row per identity. Extra privileged roles collapse to +N in the Roles column. */
+export function groupHoldersByIdentity(holders: PrivilegedHolder[]): PrivilegedHolderGroup[] {
+  const map = new Map<string, PrivilegedHolderGroup>()
+  for (const row of holders) {
+    const current = map.get(row.identityId)
+    if (!current) {
+      map.set(row.identityId, { ...row, assignmentStates: [...row.assignmentStates], roleNames: [row.roleName] })
+      continue
+    }
+    if (!current.roleNames.includes(row.roleName)) current.roleNames.push(row.roleName)
+    for (const state of row.assignmentStates) {
+      if (!current.assignmentStates.includes(state)) current.assignmentStates.push(state)
+    }
+  }
+  return [...map.values()]
+}
+
 export function summaryHasIdentityNames(summary: PrivilegedSummary, identities: PrivilegedIdentityRow[]) {
   const blob = JSON.stringify(summary)
   return identities.some((row) => {

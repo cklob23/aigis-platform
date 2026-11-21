@@ -47,9 +47,17 @@ export function RolesTable({ roles, pimAvailable }: { roles: PrivilegedRoleListI
                     <TableCell>
                       <TierBadge tier={role.privilegeTier} />
                     </TableCell>
-                    <TableCell className="tnum text-sm font-normal text-foreground">{formatNumber(role.holderCount)}</TableCell>
-                    <TableCell className="tnum text-sm font-normal text-foreground">{formatNumber(role.standingCount)}</TableCell>
-                    {pimAvailable && <TableCell className="tnum text-sm font-normal text-foreground">{formatNumber(role.eligibleCount)}</TableCell>}
+                    <TableCell>
+                      <span className="tnum text-sm font-normal text-card-foreground">{formatNumber(role.holderCount)}</span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="tnum text-sm font-normal text-card-foreground">{formatNumber(role.standingCount)}</span>
+                    </TableCell>
+                    {pimAvailable && (
+                      <TableCell>
+                        <span className="tnum text-sm font-normal text-card-foreground">{formatNumber(role.eligibleCount)}</span>
+                      </TableCell>
+                    )}
                     <TableCell className="whitespace-nowrap">
                       <LastReviewCell role={role} />
                     </TableCell>
@@ -104,9 +112,13 @@ function LastReviewCell({ role }: { role: PrivilegedRoleListItem }) {
   const overdue = Boolean(role.lastReviewAt && role.holderCount > 0 && privilegedReviewPastCadence(role.lastReviewAt))
   const never = role.holderCount > 0 && !role.lastReviewAt
   return (
-    <span className={cn('inline-flex flex-wrap items-center gap-1 tnum text-sm font-normal text-foreground', (overdue || never) && 'text-[#B45309]')}>
+    <span className={cn('inline-flex flex-wrap items-center gap-1 tnum text-sm font-normal', (overdue || never) && 'text-warning')}>
       {lastReviewLabel(role)}
-      {overdue && <span className="rounded bg-[#FEF3C7] px-1 text-[10px] font-medium text-[#B45309]">Overdue</span>}
+      {overdue && (
+        <span className="rounded bg-[#FEF3C7] px-1 text-[10px] font-medium text-[#B45309] dark:bg-warning/15 dark:text-[#F5AE39]">
+          Overdue
+        </span>
+      )}
     </span>
   )
 }
@@ -130,7 +142,7 @@ function RoleStackedCard({ role, pimAvailable }: { role: PrivilegedRoleListItem;
         {pimAvailable ? 'Permanent' : 'Active'} {formatNumber(role.standingCount)}
         {pimAvailable ? ` · Eligible ${formatNumber(role.eligibleCount)}` : ''}
         {' · Last review '}
-        <span className={cn((overdue || (role.holderCount > 0 && !role.lastReviewAt)) && 'text-[#B45309]')}>
+        <span className={cn((overdue || (role.holderCount > 0 && !role.lastReviewAt)) && 'text-warning')}>
           {last}
           {overdue ? ' · Overdue' : ''}
         </span>

@@ -39,6 +39,13 @@ describe('PimBanner', () => {
     expect(html).toContain('Not available without P2')
     expect(html).toContain('About Entra ID P2')
   })
+
+  it('keeps Check again when a recheck control is passed', () => {
+    const html = renderToStaticMarkup(
+      createElement(PimBanner, { pim: 'unavailable', recheck: createElement('button', null, 'Check again') }),
+    )
+    expect(html).toContain('Check again')
+  })
 })
 
 describe('HoldersTable state column', () => {
@@ -63,12 +70,13 @@ describe('HoldersTable state column', () => {
     const html = renderToStaticMarkup(createElement(HoldersTableStatic, { holders: p2.holders, pimAvailable: true }))
     expect(html.match(/Adele Vance/g)?.length).toBe(2)
     expect(html).toContain('Permanent + Eligible')
+    expect(html).toContain('+1')
     expect(html).not.toContain('Directory Readers')
   })
 
   it('does not put a tier badge next to names, and shows Owner and MFA columns', () => {
     const html = renderToStaticMarkup(createElement(HoldersTableStatic, { holders: p2.holders, pimAvailable: true }))
-    expect(html).toContain('MFA method')
+    expect(html).toContain('>MFA<')
     expect(html).toContain('Owner')
     expect(html).toContain('Showing')
     expect(html).toContain('Review overdue')
@@ -78,6 +86,14 @@ describe('HoldersTable state column', () => {
     expect(html).not.toContain('>Guest<')
     expect(html).toContain('app id 7f3c…b21e')
     expect(html).not.toContain('hr-sync@northwind.example')
+    expect(html.indexOf('>Identity<')).toBeLessThan(html.indexOf('>Class<'))
+    expect(html.indexOf('>Class<')).toBeLessThan(html.indexOf('>Tier<'))
+    expect(html.indexOf('>Tier<')).toBeLessThan(html.indexOf('>Roles<'))
+    expect(html.indexOf('>Roles<')).toBeLessThan(html.indexOf('>Assignment<'))
+    expect(html.indexOf('>Assignment<')).toBeLessThan(html.indexOf('>Last sign-in<'))
+    expect(html.indexOf('>Last sign-in<')).toBeLessThan(html.indexOf('>MFA<'))
+    expect(html.indexOf('>MFA<')).toBeLessThan(html.indexOf('>Owner<'))
+    expect(html.indexOf('>Owner<')).toBeLessThan(html.indexOf('>Risk<'))
   })
 })
 
@@ -155,7 +171,9 @@ describe('PrivilegedOverview', () => {
     expect(p2Html).not.toContain('Permanent assignments 64 / of 142')
     expect(p2Html).toContain('4 overdue, 6 never reviewed')
     expect(p2Html).toContain('Next due')
-    expect(p2Html).toContain('Nov 18, 2026 · overdue')
+    expect(p2Html).toContain('Dec 11, 2026')
+    expect(p2Html).not.toContain('Nov 18, 2026 · overdue')
+    expect(p2Html).not.toContain('Dec 11, 2026 · overdue')
     expect(p2Html).toContain('Preview')
     expect(p2Html).toContain('Highest-risk role holders')
     expect(p2Html).toContain('Tenant findings')

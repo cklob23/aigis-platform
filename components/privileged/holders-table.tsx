@@ -3,7 +3,8 @@
 import { useCallback, useMemo, useTransition } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Search } from 'lucide-react'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { STICKY_ROW, stickyCell, stickyHead } from '@/components/ui/table-sticky'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
@@ -13,11 +14,13 @@ import { RiskBadge } from '@/components/risk/risk-badge'
 import {
   combinedStateLabel,
   filterHolders,
+  groupHoldersByIdentity,
   privilegedClassLabel,
   uniqueHolderCount,
   type HolderFilters,
   type PrivilegedAssignmentState,
   type PrivilegedHolder,
+  type PrivilegedHolderGroup,
 } from '@/lib/privileged/view'
 import { relativeDays } from '@/lib/format'
 import { DORMANT_ADMIN_DAYS, daysSince, privilegedReviewPastCadence } from '@/lib/risk/privileged'
@@ -48,6 +51,10 @@ const OWNER_OPTIONS = [
   { value: 'all', label: 'Any owner' },
   { value: 'unowned', label: 'Unowned' },
 ]
+
+const REVIEW_CHIP =
+  'rounded bg-[#FEF3C7] px-1 text-[10px] font-medium text-[#B45309] dark:bg-warning/15 dark:text-[#F5AE39]'
+const STICKY_BELOW_1440 = 'min-[1440px]:static min-[1440px]:z-auto min-[1440px]:after:hidden'
 
 export function HoldersTable({
   holders,
@@ -160,62 +167,67 @@ export function HoldersTableStatic({
 }
 
 function HoldersMarkup({ rows, pimAvailable }: { rows: PrivilegedHolder[]; pimAvailable: boolean }) {
+  const grouped = groupHoldersByIdentity(rows)
   return (
     <>
-      <div className="hidden overflow-x-auto rounded-lg border sm:block">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/40 hover:bg-muted/40">
-              <TableHead>Identity</TableHead>
-              <TableHead>Class</TableHead>
-              <TableHead>Highest tier</TableHead>
-              <TableHead>Roles</TableHead>
-              <TableHead>Assignment</TableHead>
-              <TableHead>Risk</TableHead>
-              <TableHead className="hidden md:table-cell">Last sign-in</TableHead>
-              <TableHead className="hidden lg:table-cell">MFA method</TableHead>
-              <TableHead className="hidden xl:table-cell">Owner</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => (
-              <HolderRow key={`${row.identityId}:${row.roleId}`} row={row} pimAvailable={pimAvailable} />
-            ))}
-            {rows.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={9} className="py-8 text-center text-muted-foreground text-sm">
-                  No role holders match these filters.
-                </TableCell>
+      <div className="relative hidden rounded-lg border sm:block">
+        <div className="overflow-x-auto max-[1439px]:[mask-image:linear-gradient(to_right,black_calc(100%-3rem),transparent)]">
+          <table className="w-full min-w-[72rem] caption-bottom text-sm min-[1440px]:min-w-0">
+            <TableHeader>
+              <TableRow className={cn('bg-muted/40 hover:bg-muted/40', STICKY_ROW)}>
+                <TableHead className={stickyHead('left-0', cn('w-44 min-w-44 max-w-44', STICKY_BELOW_1440))}>Identity</TableHead>
+                <TableHead>Class</TableHead>
+                <TableHead>Tier</TableHead>
+                <TableHead>Roles</TableHead>
+                <TableHead>Assignment</TableHead>
+                <TableHead>Last sign-in</TableHead>
+                <TableHead>MFA</TableHead>
+                <TableHead>Owner</TableHead>
+                <TableHead>Risk</TableHead>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {grouped.map((row) => (
+                <HolderRow key={row.identityId} row={row} pimAvailable={pimAvailable} />
+              ))}
+              {grouped.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={9} className="py-8 text-center text-muted-foreground text-sm">
+                    No role holders match these filters.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </table>
+        </div>
       </div>
       <div className="flex flex-col overflow-hidden rounded-lg border sm:hidden">
-        {rows.map((row) => (
-          <HolderStackedCard key={`${row.identityId}:${row.roleId}`} row={row} pimAvailable={pimAvailable} />
+        {grouped.map((row) => (
+          <HolderStackedCard key={row.identityId} row={row} pimAvailable={pimAvailable} />
         ))}
-        {rows.length === 0 && <p className="px-3 py-8 text-center text-muted-foreground text-sm">No role holders match these filters.</p>}
+        {grouped.length === 0 && <p className="px-3 py-8 text-center text-muted-foreground text-sm">No role holders match these filters.</p>}
       </div>
     </>
   )
 }
 
-function ReviewChips({ row }: { row: PrivilegedHolder }) {
+function RoleNames({ names }: { names: string[] }) {
+  const [first, ...rest] = names
+  if (!first) return <span className="text-muted-foreground">—</span>
+  return (
+    <span className="inline-flex max-w-[10.5rem] items-baseline gap-1">
+      <span className="truncate">{first}</span>
+      {rest.length > 0 ? <span className="shrink-0 text-muted-foreground">+{rest.length}</span> : null}
+    </span>
+  )
+}
+
+function ReviewStatus({ row }: { row: PrivilegedHolder }) {
   const neverReviewed = !row.lastReviewedAt
   const overdue = privilegedReviewPastCadence(row.lastReviewedAt)
-  return (
-    <div className="flex flex-wrap items-center gap-1">
-      <RiskBadge level={row.riskLevel} />
-      <span className="tnum text-xs">{row.riskScore}</span>
-      {neverReviewed && (
-        <span className="rounded bg-[#FEF3C7] px-1 text-[10px] font-medium text-[#B45309]">Never reviewed</span>
-      )}
-      {overdue && !neverReviewed && (
-        <span className="rounded bg-[#FEF3C7] px-1 text-[10px] font-medium text-[#B45309]">Review overdue</span>
-      )}
-    </div>
-  )
+  if (neverReviewed) return <span className={REVIEW_CHIP}>Never reviewed</span>
+  if (overdue) return <span className={REVIEW_CHIP}>Review overdue</span>
+  return null
 }
 
 function MfaCell({ label }: { label: string }) {
@@ -229,12 +241,12 @@ function MfaCell({ label }: { label: string }) {
   return <span className="text-xs font-normal">{label}</span>
 }
 
-function HolderRow({ row, pimAvailable }: { row: PrivilegedHolder; pimAvailable: boolean }) {
+function HolderRow({ row, pimAvailable }: { row: PrivilegedHolderGroup; pimAvailable: boolean }) {
   const idle = daysSince(row.lastActivityAt)
   const dormant = row.lastActivityAt == null || (idle !== null && idle >= DORMANT_ADMIN_DAYS)
   return (
-    <TableRow>
-      <TableCell>
+    <TableRow className={STICKY_ROW}>
+      <TableCell className={stickyCell('left-0', cn('w-44 min-w-44 max-w-44', STICKY_BELOW_1440))}>
         <div className="flex min-w-0 flex-col">
           <span className="truncate font-medium">{row.displayName ?? row.identifier}</span>
           <span className="truncate font-mono text-muted-foreground text-xs">{row.identifier}</span>
@@ -245,28 +257,36 @@ function HolderRow({ row, pimAvailable }: { row: PrivilegedHolder; pimAvailable:
         <TierBadge tier={row.privilegeTier} />
       </TableCell>
       <TableCell>
-        <span className="text-sm">{row.roleName}</span>
+        <RoleNames names={row.roleNames} />
       </TableCell>
       <TableCell>
         <Badge variant="outline" className="h-5 font-normal">
           {pimAvailable ? combinedStateLabel(row.assignmentStates, true) : 'Active'}
         </Badge>
       </TableCell>
+      <TableCell className="whitespace-normal">
+        <div className="flex flex-col items-start gap-0.5">
+          <span className={cn('tnum whitespace-nowrap text-xs', dormant && 'text-destructive')}>{relativeDays(row.lastActivityAt)}</span>
+          <ReviewStatus row={row} />
+        </div>
+      </TableCell>
       <TableCell>
-        <ReviewChips row={row} />
-      </TableCell>
-      <TableCell className={cn('hidden tnum text-xs md:table-cell', dormant && 'text-destructive')}>
-        {relativeDays(row.lastActivityAt)}
-      </TableCell>
-      <TableCell className="hidden lg:table-cell">
         <MfaCell label={row.mfaLabel} />
       </TableCell>
-      <TableCell className="hidden text-xs font-normal xl:table-cell">{row.ownerDisplayName ?? '—'}</TableCell>
+      <TableCell className="max-w-[6.5rem] truncate text-xs font-normal">{row.ownerDisplayName ?? '—'}</TableCell>
+      <TableCell>
+        <div className="flex items-center gap-1 whitespace-nowrap">
+          <RiskBadge level={row.riskLevel} />
+          <span className="tnum text-xs">{row.riskScore}</span>
+        </div>
+      </TableCell>
     </TableRow>
   )
 }
 
-function HolderStackedCard({ row, pimAvailable }: { row: PrivilegedHolder; pimAvailable: boolean }) {
+function HolderStackedCard({ row, pimAvailable }: { row: PrivilegedHolderGroup; pimAvailable: boolean }) {
+  const idle = daysSince(row.lastActivityAt)
+  const dormant = row.lastActivityAt == null || (idle !== null && idle >= DORMANT_ADMIN_DAYS)
   return (
     <div className="flex flex-col gap-2 border-b px-3 py-3 last:border-b-0">
       <div className="flex min-w-0 flex-col">
@@ -274,12 +294,18 @@ function HolderStackedCard({ row, pimAvailable }: { row: PrivilegedHolder; pimAv
         <span className="truncate font-mono text-muted-foreground text-xs">{row.identifier}</span>
       </div>
       <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs">{privilegedClassLabel(row.identityClass, row.dedicatedAdmin)}</span>
         <TierBadge tier={row.privilegeTier} />
-        <span className="text-sm">{row.roleName}</span>
+        <RoleNames names={row.roleNames} />
         <Badge variant="outline" className="h-5 font-normal">
           {pimAvailable ? combinedStateLabel(row.assignmentStates, true) : 'Active'}
         </Badge>
-        <ReviewChips row={row} />
+        <div className="flex items-center gap-1">
+          <RiskBadge level={row.riskLevel} />
+          <span className="tnum text-xs">{row.riskScore}</span>
+        </div>
+        <ReviewStatus row={row} />
+        <span className={cn('tnum text-xs', dormant && 'text-destructive')}>{relativeDays(row.lastActivityAt)}</span>
       </div>
     </div>
   )
