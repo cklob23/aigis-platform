@@ -72,6 +72,12 @@ export function groupPimReadsEnabled(settings: Record<string, unknown> | null | 
   return privilegedStageEnabled(settings) && parsed.capability?.pim_groups === 'available'
 }
 
+/** Auth-method $batch GETs for role holders. Off when the permission is not granted. */
+export function authMethodsReadsEnabled(settings: Record<string, unknown> | null | undefined): boolean {
+  const parsed = parsePrivilegedSettings(settings)
+  return privilegedStageEnabled(settings) && parsed.capability?.auth_methods === true
+}
+
 /** Recheck probes Graph. Off and demo tenants must not. */
 export function shouldProbePrivilegedCapability(enabled: boolean, isDemo: boolean): boolean {
   return enabled === true && !isDemo

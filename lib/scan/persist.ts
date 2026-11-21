@@ -63,11 +63,24 @@ export async function persistRiskScores(
   }
 }
 
+export type RiskFindingInsert = {
+  guest_id?: string | null
+  identity_id?: string | null
+} & Record<string, unknown>
+
+/** Guest-keyed rows stay valid. Identity-only rows need identity_id. */
+export function assertFindingSubject(row: RiskFindingInsert) {
+  if (row.guest_id == null && row.identity_id == null) {
+    throw new Error('risk_findings insert: guest_id or identity_id is required')
+  }
+}
+
 export async function persistRiskFindings(
   resolveOpen: () => WriteTask,
   insertBatch: (rows: unknown[]) => WriteTask,
-  rows: unknown[],
+  rows: RiskFindingInsert[],
 ) {
+  for (const row of rows) assertFindingSubject(row)
   mustWrite('risk_findings resolve open', await resolveOpen())
   for (const batch of chunk(rows, 500)) {
     mustWrite('risk_findings insert', await insertBatch(batch))

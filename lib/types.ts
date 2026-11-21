@@ -1,5 +1,11 @@
 export type RiskLevel = 'critical' | 'high' | 'medium' | 'low'
 export type RecommendedAction = 'keep' | 'review' | 'remove_selected' | 'disable' | 'remove'
+/** Per-assignment overlay recommendation. Computed in TS; `role_assignments` has no column in this PR. */
+export type AssignmentRecommendedChange =
+  | 'convert_to_eligible'
+  | 'remove_assignment'
+  | 'move_to_dedicated_admin'
+  | 'reduce_scope'
 export type ReviewStatus = 'never_reviewed' | 'pending' | 'approved' | 'removed' | 'extended' | 'investigating'
 export type DomainClassification =
   | 'approved_partner'
@@ -99,8 +105,8 @@ export type ExternalDomain = {
 // External Identity Governance abstractions (Phase 1)
 // ---------------------------------------------------------------------------
 
-/** Top-level identity taxonomy. `external` is always populated; `human_internal` is scoped role holders, guest sponsors, and role-holder managers when the privileged module is on. */
-export type IdentityClass = 'human_internal' | 'external' | 'privileged' | 'non_human' | 'agent'
+/** Top-level identity taxonomy. `external` is always populated; `human_internal` is scoped role holders, guest sponsors, and role-holder managers when the privileged module is on. `group` is a privileged-only class (no SQL in PR 6). */
+export type IdentityClass = 'human_internal' | 'external' | 'privileged' | 'non_human' | 'group' | 'agent'
 export type IdentityStatus = 'active' | 'disabled' | 'removed'
 export type IdentityOwnerKind = 'sponsor' | 'assigned' | 'inferred' | 'none'
 export type IdentityAccountSource = 'entra'
@@ -192,6 +198,8 @@ export type RoleAssignment = {
   first_seen_at: string
   last_seen_at: string
   removed_at: string | null
+  /** Overlay-only. Not stored on `role_assignments` until a later SQL migration. */
+  recommended_change?: AssignmentRecommendedChange | null
 }
 
 export type GroupPimEligibility = {
@@ -371,7 +379,19 @@ export const REVIEW_NO_RESPONSE_LABELS: Record<ReviewNoResponseAction, { label: 
   remove: { label: 'Remove access', description: 'Undecided items are recorded as remove and queued for remediation approval.' },
 }
 
-export type AlertTriggerType = 'new_external_identity' | 'risk_level' | 'unapproved_organization' | 'sensitive_access' | 'inactive_identity' | 'review_overdue' | 'scan_failed'
+export type AlertTriggerType =
+  | 'new_external_identity'
+  | 'risk_level'
+  | 'unapproved_organization'
+  | 'sensitive_access'
+  | 'inactive_identity'
+  | 'review_overdue'
+  | 'scan_failed'
+  | 'new_tier0_assignment'
+  | 'guest_with_role'
+  | 'dormant_admin'
+  | 'privileged_not_reviewed'
+  | 'privileged_change_not_seen'
 
 export const ALERT_TRIGGER_LABELS: Record<AlertTriggerType, { label: string; description: string }> = {
   new_external_identity: { label: 'New external identity', description: 'An external identity appeared in the tenant for the first time.' },
@@ -381,6 +401,11 @@ export const ALERT_TRIGGER_LABELS: Record<AlertTriggerType, { label: string; des
   inactive_identity: { label: 'Inactive identity', description: 'No sign-in for more than a chosen number of days while access remains.' },
   review_overdue: { label: 'Access review overdue', description: 'An active review passed its due date with pending decisions.' },
   scan_failed: { label: 'Scan failed', description: 'A scheduled or manual scan ended with an error.' },
+  new_tier0_assignment: { label: 'New Tier 0 assignment', description: 'A Tier 0 directory role was assigned to an identity since the last scan.' },
+  guest_with_role: { label: 'Guest with a directory role', description: 'An external identity holds a privileged directory role.' },
+  dormant_admin: { label: 'Dormant privileged identity', description: 'A privileged identity has not signed in for 90 days or more.' },
+  privileged_not_reviewed: { label: 'Privileged identity not reviewed', description: 'A privileged identity has never been reviewed, or the last review is overdue.' },
+  privileged_change_not_seen: { label: 'Privileged change not seen', description: 'A standing privileged assignment is still in place after AIGIS recommended converting it to eligible.' },
 }
 
 export type AlertRuleConditions = {
