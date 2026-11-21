@@ -6,7 +6,7 @@ import { ALERT_TRIGGER_LABELS, type AlertRule, type ApprovalState, type RiskLeve
 import { requireIdentityId } from '@/lib/identity/governance'
 import { persistNewAlerts, stampAlertEmail } from '@/lib/alerts/persist'
 import { fetchAllById } from '@/lib/supabase/page'
-import { parsePrivilegedSettings } from '@/lib/privileged/capability'
+import { parsePrivilegedSettings, privilegedAlertsEnabled } from '@/lib/privileged/capability'
 import {
   dormantAdminCandidates,
   guestWithRoleCandidates,
@@ -346,6 +346,7 @@ async function candidatesFor(rule: AlertRule, ctx: Ctx): Promise<Candidate[]> {
 }
 
 async function privilegedCandidates(rule: AlertRule, ctx: Ctx): Promise<Candidate[]> {
+  if (!privilegedAlertsEnabled(ctx.tenantSettings ?? null)) return []
   const supabase = db()
   const identities = await fetchAllById<PrivilegedAlertIdentity>('identities alerts privileged', () =>
     supabase

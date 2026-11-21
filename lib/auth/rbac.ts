@@ -63,3 +63,47 @@ export const ROLE_LABELS: Record<RoleKey, string> = {
 export function can(role: RoleKey, permission: Permission) {
   return MATRIX[role]?.includes(permission) ?? false
 }
+
+export function canViewPrivilegedSummary(role: RoleKey) {
+  return can(role, 'view')
+}
+
+export function canViewPrivilegedDetail(role: RoleKey) {
+  return can(role, 'audit.view')
+}
+
+export function requirePrivilegedDetail(role: RoleKey) {
+  if (!canViewPrivilegedDetail(role)) {
+    throw new Error('forbidden: privileged detail requires audit.view')
+  }
+}
+
+export function canExportPrivileged(role: RoleKey) {
+  return can(role, 'export') && can(role, 'audit.view')
+}
+
+export function canRequestPrivilegedChange(role: RoleKey) {
+  return can(role, 'remediation.request') && can(role, 'audit.view')
+}
+
+export function canApprovePrivilegedChange(
+  role: RoleKey,
+  opts: { userId: string; requesterId: string | null; alreadyApproved: boolean },
+) {
+  if (!can(role, 'remediation.execute')) return false
+  if (opts.alreadyApproved) return false
+  if (opts.requesterId && opts.userId === opts.requesterId) return false
+  return true
+}
+
+export function canMarkPrivilegedChange(role: RoleKey) {
+  return can(role, 'remediation.execute')
+}
+
+export function canStartPrivilegedReview(role: RoleKey) {
+  return can(role, 'review.create') && can(role, 'audit.view')
+}
+
+export function canDecidePrivilegedReview(role: RoleKey) {
+  return can(role, 'review.decide') && can(role, 'audit.view')
+}

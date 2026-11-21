@@ -14,6 +14,7 @@ import {
   Settings,
   RadarIcon,
   ShieldAlert,
+  Shield,
   LogOut,
   ChevronsUpDown,
   Building2,
@@ -39,6 +40,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Logo } from '@/components/brand/logo'
 import { cn } from '@/lib/utils'
 import { ROLE_LABELS, type RoleKey } from '@/lib/auth/rbac'
+import { PRIVILEGED_NAV_LABEL } from '@/lib/privileged/copy'
 import { initials } from '@/lib/format'
 
 export type SidebarUser = { name: string; email: string; role: RoleKey; demo: boolean }
@@ -48,6 +50,7 @@ export type SidebarCounts = { critical: number; openAlerts: number; pendingRevie
 const NAV = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/guests', label: 'External identities', icon: Users, badge: 'critical' as const },
+  { href: '/privileged', label: PRIVILEGED_NAV_LABEL, icon: Shield },
   { href: '/organizations', label: 'External organizations', icon: Building2 },
   { href: '/domains', label: 'Domains', icon: Globe },
   { href: '/resources', label: 'Resources', icon: FolderLock },
@@ -77,11 +80,13 @@ export function AppSidebar({
   tenant,
   counts,
   canViewAudit = true,
+  privilegedEnabled = false,
 }: {
   user: SidebarUser
   tenant: SidebarTenant
   counts: SidebarCounts
   canViewAudit?: boolean
+  privilegedEnabled?: boolean
 }) {
   const pathname = usePathname()
   const signOutFormRef = useRef<HTMLFormElement>(null)
@@ -90,6 +95,7 @@ export function AppSidebar({
   const renderGroup = (items: typeof NAV | typeof GOVERN) =>
     items
       .filter((item) => item.href !== '/audit' || canViewAudit)
+      .filter((item) => item.href !== '/privileged' || privilegedEnabled)
       .map((item) => {
       const badgeKey = 'badge' in item && item.badge ? item.badge : null
       const badge = badgeKey ? counts[badgeKey] : 0

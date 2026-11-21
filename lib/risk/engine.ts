@@ -72,7 +72,7 @@ export function computeIdentityRisk(
   if (set === 'stub') return STUB_RESULT
   const base = set === 'external' ? scoreExternal(input, policy, now) : STUB_RESULT
   if (!input.privileged?.isPrivileged) return base
-  const overlay = scorePrivilegedOverlay(input.privileged, policy, now)
+  const overlay = scorePrivilegedOverlay(input.privileged, now)
   const factors = [...base.factors, ...overlay.factors]
   const score = Math.min(100, base.score + overlay.score)
   const level = levelFor(score)

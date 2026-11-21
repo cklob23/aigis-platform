@@ -10,8 +10,9 @@ import { GuestFilters } from '@/components/guests/guest-filters'
 import { GuestTable } from '@/components/guests/guest-table'
 import { CauseGroups } from '@/components/guests/cause-groups'
 import { Pagination } from '@/components/layout/pagination'
-import { formatNumber } from '@/lib/format'
 import { guestsEmptyCopy } from '@/lib/guests-empty-copy'
+import { privilegedPagesEnabled } from '@/lib/privileged/capability'
+import { getIdentityPrivilegeTiers } from '@/lib/data/privileged'
 
 export const metadata = { title: 'External identities' }
 
@@ -35,6 +36,7 @@ export default async function GuestsPage({ searchParams }: { searchParams: Promi
     page: Number(sp.page ?? 1),
   }
   const groupedRisk = filters.risk === 'high' || filters.risk === 'critical' ? filters.risk : null
+  const privilegedEnabled = privilegedPagesEnabled(tenant.settings)
   const [{ guests, total, page, pageSize }, domains, causeCounts, scopeCounts] = await Promise.all([
     listGuests(tenant.id, filters),
     getGuestDomains(tenant.id),
@@ -42,12 +44,18 @@ export default async function GuestsPage({ searchParams }: { searchParams: Promi
     getReviewScopeCounts(tenant.id),
   ])
   const workflow = reviewWorkflowOf(tenant.settings)
+  const privilegeTiers = privilegedEnabled
+    ? await getIdentityPrivilegeTiers(
+        tenant.id,
+        guests.map((g) => g.identity_id).filter(Boolean),
+      )
+    : {}
   const exportParams = new URLSearchParams(Object.entries(sp).filter(([, v]) => v) as [string, string][])
   exportParams.set('type', 'guests')
 
   return (
     <>
-      <PageHeader title="External identities" description={`${formatNumber(total)} external identities match. Scores combine inactivity, sponsorship, domain trust, and sensitive-resource exposure.`} />
+      <PageHeader title="External identities" description="All external identities in this tenant." />
       <Suspense>
         <GuestFilters domains={domains} />
       </Suspense>
@@ -60,6 +68,7 @@ export default async function GuestsPage({ searchParams }: { searchParams: Promi
         scopeCounts={scopeCounts}
         defaultReviewerEmails={workflow.default_reviewer_emails}
         emptyMessage={guestsEmptyCopy(filters)}
+        privilegeTiers={privilegeTiers}
       />
       <Pagination page={page} pageSize={pageSize} total={total} basePath="/guests" params={sp} />
     </>

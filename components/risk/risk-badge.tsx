@@ -3,7 +3,7 @@ import type { RiskLevel } from '@/lib/types'
 
 const STYLES: Record<RiskLevel, string> = {
   critical: 'bg-destructive/15 text-destructive ring-destructive/30',
-  high: 'bg-warning/15 text-warning-foreground ring-warning/40 dark:text-warning',
+  high: 'bg-[#FFEDD5] text-[#9A3412] ring-[#FDBA74] dark:bg-warning/15 dark:text-[#FCD34D] dark:ring-warning/40',
   medium: 'bg-primary/10 text-primary ring-primary/25',
   low: 'bg-muted text-muted-foreground ring-border',
 }

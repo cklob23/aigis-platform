@@ -6,6 +6,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  devIndicators: false,
   async redirects() {
     // Canonical External Identity Governance paths. The underlying routes keep
     // their original segment names so existing links, exports, and audit

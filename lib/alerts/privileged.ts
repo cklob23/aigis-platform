@@ -1,5 +1,10 @@
 import type { AssignmentRecommendedChange, IdentityClass } from '@/lib/types'
-import { DORMANT_ADMIN_DAYS, PRIVILEGED_REVIEW_DAYS, recommendAssignmentChange } from '@/lib/risk/privileged'
+import {
+  DORMANT_ADMIN_DAYS,
+  PRIVILEGED_REVIEW_DAYS,
+  privilegedReviewPastCadence,
+  recommendAssignmentChange,
+} from '@/lib/risk/privileged'
 
 const DAY = 86_400_000
 
@@ -88,12 +93,11 @@ export function privilegedNotReviewedCandidates(
   identities: PrivilegedAlertIdentity[],
   now: number,
 ): PrivilegedAlertCandidate[] {
-  const cutoff = now - PRIVILEGED_REVIEW_DAYS * DAY
   return identities
     .filter((row) => {
       if (!row.is_privileged) return false
       if (!row.last_reviewed_at) return true
-      return new Date(row.last_reviewed_at).getTime() < cutoff
+      return privilegedReviewPastCadence(row.last_reviewed_at, now)
     })
     .map((row) => ({
       identityId: row.id,
