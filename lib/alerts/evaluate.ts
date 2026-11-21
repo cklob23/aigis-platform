@@ -6,6 +6,16 @@ import { ALERT_TRIGGER_LABELS, type AlertRule, type ApprovalState, type RiskLeve
 import { requireIdentityId } from '@/lib/identity/governance'
 import { persistNewAlerts, stampAlertEmail } from '@/lib/alerts/persist'
 import { fetchAllById } from '@/lib/supabase/page'
+import { parsePrivilegedSettings } from '@/lib/privileged/capability'
+import {
+  dormantAdminCandidates,
+  guestWithRoleCandidates,
+  newTier0AssignmentCandidates,
+  privilegedChangeNotSeenCandidates,
+  privilegedNotReviewedCandidates,
+  type PrivilegedAlertAssignment,
+  type PrivilegedAlertIdentity,
+} from '@/lib/alerts/privileged'
 
 const RISK_ORDER: Record<RiskLevel, number> = { low: 0, medium: 1, high: 2, critical: 3 }
 const DAY = 86_400_000
@@ -30,6 +40,7 @@ type Candidate = {
   title: string
   description: string | null
   guest_id?: string | null
+  identity_id?: string | null
   resource_id?: string | null
   metadata?: Record<string, unknown>
   emailItem: AlertEmailItem
@@ -95,7 +106,7 @@ export async function evaluateAlertRules(tenantId: string, opts: EvaluateOptions
   let emailed = 0
 
   for (const rule of rules) {
-    const candidates = await candidatesFor(rule, { tenantId, guests, guestById, now, scanType, opts })
+    const candidates = await candidatesFor(rule, { tenantId, guests, guestById, now, scanType, opts, tenantSettings: tenant.settings })
     if (candidates.length === 0) continue
 
     const keys = candidates.map((c) => c.dedupe_key)
@@ -122,9 +133,9 @@ export async function evaluateAlertRules(tenantId: string, opts: EvaluateOptions
           title: c.title,
           description: c.description,
           guest_id: c.guest_id ?? null,
-          identity_id: c.guest_id
-            ? requireIdentityId({ id: c.guest_id, identity_id: guestById.get(c.guest_id)?.identity_id })
-            : null,
+          identity_id:
+            c.identity_id ??
+            (c.guest_id ? requireIdentityId({ id: c.guest_id, identity_id: guestById.get(c.guest_id)?.identity_id }) : null),
           resource_id: c.resource_id ?? null,
           dedupe_key: c.dedupe_key,
           metadata: { ...(c.metadata ?? {}), scan_job_id: opts.scanJobId ?? null },
@@ -156,7 +167,15 @@ export async function evaluateAlertRules(tenantId: string, opts: EvaluateOptions
   return { created, emailed }
 }
 
-type Ctx = { tenantId: string; guests: GuestRow[]; guestById: Map<string, GuestRow>; now: number; scanType: string | null; opts: EvaluateOptions }
+type Ctx = {
+  tenantId: string
+  guests: GuestRow[]
+  guestById: Map<string, GuestRow>
+  now: number
+  scanType: string | null
+  opts: EvaluateOptions
+  tenantSettings?: Record<string, unknown>
+}
 
 async function candidatesFor(rule: AlertRule, ctx: Ctx): Promise<Candidate[]> {
   const supabase = db()
@@ -314,7 +333,84 @@ async function candidatesFor(rule: AlertRule, ctx: Ctx): Promise<Candidate[]> {
       ]
     }
 
+    case 'new_tier0_assignment':
+    case 'guest_with_role':
+    case 'dormant_admin':
+    case 'privileged_not_reviewed':
+    case 'privileged_change_not_seen':
+      return privilegedCandidates(rule, ctx)
+
     default:
       return []
   }
+}
+
+async function privilegedCandidates(rule: AlertRule, ctx: Ctx): Promise<Candidate[]> {
+  const supabase = db()
+  const identities = await fetchAllById<PrivilegedAlertIdentity>('identities alerts privileged', () =>
+    supabase
+      .from('identities')
+      .select(
+        'id,identity_class,display_name,primary_email,is_privileged,last_activity_at,last_reviewed_at,first_seen_at,status',
+      )
+      .eq('tenant_id', ctx.tenantId)
+      .is('removed_at', null),
+  )
+  const guestByIdentity = new Map(ctx.guests.filter((g) => g.identity_id).map((g) => [g.identity_id as string, g.id]))
+  const toCandidate = (row: { identityId: string; title: string; description: string; metadata?: Record<string, unknown> }, kind: string): Candidate => {
+    const guestId = guestByIdentity.get(row.identityId) ?? null
+    return {
+      dedupe_key: `${rule.id}:${kind}:${row.identityId}${row.metadata?.assignment_id ? `:${row.metadata.assignment_id}` : ''}`,
+      title: row.title,
+      description: row.description,
+      guest_id: guestId,
+      identity_id: row.identityId,
+      metadata: row.metadata,
+      emailItem: { title: row.title, detail: row.description, href: guestId ? `/guests/${guestId}` : '/settings/alerts' },
+    }
+  }
+
+  if (rule.trigger_type === 'guest_with_role') {
+    return guestWithRoleCandidates(identities).map((row) => toCandidate(row, 'guest-role'))
+  }
+  if (rule.trigger_type === 'dormant_admin') {
+    return dormantAdminCandidates(identities, ctx.now).map((row) => toCandidate(row, 'dormant'))
+  }
+  if (rule.trigger_type === 'privileged_not_reviewed') {
+    return privilegedNotReviewedCandidates(identities, ctx.now).map((row) => toCandidate(row, 'unreviewed'))
+  }
+
+  const assignmentRows = await fetchAllById<{
+    id: string
+    principal_identity_id: string | null
+    assignment_type: 'active' | 'eligible'
+    member_type: 'direct' | 'group' | 'inherited'
+    directory_scope_id: string | null
+    first_seen_at: string
+    directory_role_id: string
+  }>('role_assignments alerts', () =>
+    supabase
+      .from('role_assignments')
+      .select('id,principal_identity_id,assignment_type,member_type,directory_scope_id,first_seen_at,directory_role_id')
+      .eq('tenant_id', ctx.tenantId)
+      .is('removed_at', null),
+  )
+  const roles = await fetchAllById<{ id: string; privilege_tier: 0 | 1 | 2 | null }>('directory_roles alerts', () =>
+    supabase.from('directory_roles').select('id,privilege_tier').eq('tenant_id', ctx.tenantId).is('removed_at', null),
+  )
+  const tierByRole = new Map(roles.map((row) => [row.id, row.privilege_tier]))
+  const assignments: PrivilegedAlertAssignment[] = assignmentRows.map((row) => ({
+    ...row,
+    privilege_tier: tierByRole.get(row.directory_role_id) ?? null,
+  }))
+
+  if (rule.trigger_type === 'new_tier0_assignment') {
+    if (ctx.scanType === 'initial_full' || !ctx.opts.scanStartedAt) return []
+    const since = new Date(ctx.opts.scanStartedAt).getTime() - 5 * 60_000
+    return newTier0AssignmentCandidates(identities, assignments, since).map((row) => toCandidate(row, 't0'))
+  }
+
+  const parsed = parsePrivilegedSettings(ctx.tenantSettings ?? null)
+  const hasP2 = parsed.capability?.pim === 'available' || parsed.capability?.license_hint === 'p2'
+  return privilegedChangeNotSeenCandidates(identities, assignments, ctx.now, hasP2).map((row) => toCandidate(row, 'change'))
 }

@@ -14,7 +14,7 @@ import {
   type GraphUser,
 } from '@/lib/graph/queries'
 import { detectSensitivity } from '@/lib/risk/sensitivity'
-import { computeIdentityRisk, identityRiskPatch, DEFAULT_RISK_POLICY, type RiskPolicyConfig } from '@/lib/risk/engine'
+import { CLASS_FACTOR_SETS, computeIdentityRisk, identityRiskPatch, DEFAULT_RISK_POLICY, type RiskPolicyConfig } from '@/lib/risk/engine'
 import type { DomainClassification, ExternalDomain, Guest, RelationshipType, Resource, ResourceType } from '@/lib/types'
 import { audit } from '@/lib/audit'
 
@@ -48,6 +48,7 @@ import {
   persistRiskFindings,
   persistRiskScores,
 } from '@/lib/scan/persist'
+import { loadPrivilegedOverlayContexts, overlayForIdentity } from '@/lib/scan/privileged-risk'
 
 function domainOf(user: GraphUser) {
   const mail = user.mail ?? ''
@@ -81,6 +82,10 @@ export async function createScanJob(tenantId: string, scanType: string, startedB
 /** Re-scores every guest for the tenant from the local inventory. Used by live scans and demo tenants. */
 export async function rescoreTenant(tenantId: string, scanJobId: string | null, policy: RiskPolicyConfig = DEFAULT_RISK_POLICY) {
   const supabase = db()
+  const { data: tenantRow } = await supabase.from('tenants').select('settings').eq('id', tenantId).single()
+  const settings = (tenantRow?.settings ?? null) as Record<string, unknown> | null
+  const overlayByIdentity = await loadPrivilegedOverlayContexts(tenantId, settings)
+  const overlayOn = overlayByIdentity.size > 0
   const [guests, domains, memberships, resources] = await Promise.all([
     fetchAllById<Guest>('guest_identities rescore', () =>
       supabase.from('guest_identities').select('*').eq('tenant_id', tenantId).is('removed_at', null),
@@ -119,6 +124,7 @@ export async function rescoreTenant(tenantId: string, scanJobId: string | null, 
         domainClassification: domainMap.get(g.domain ?? '') ?? 'unknown',
         lastReviewedAt: g.last_reviewed_at,
         memberships: byGuest.get(g.id) ?? [],
+        privileged: overlayForIdentity(overlayOn ? overlayByIdentity : null, identityId),
       },
       policy,
     )
@@ -127,6 +133,50 @@ export async function rescoreTenant(tenantId: string, scanJobId: string | null, 
     identityUpdates.push({ id: identityId, ...identityRiskPatch(risk) })
     scoreRows.push({ tenant_id: tenantId, guest_id: g.id, identity_id: identityId, scan_job_id: scanJobId, score: risk.score, level: risk.level, factors: risk.factors })
   }
+
+  if (overlayOn) {
+    const scored = new Set(identityUpdates.map((row) => row.id))
+    for (const [identityId, overlay] of overlayByIdentity) {
+      if (scored.has(identityId)) continue
+      const set = CLASS_FACTOR_SETS[overlay.identityClass]
+      if (set === 'stub') continue
+      if (!overlay.isPrivileged && set === 'privileged_only') {
+        identityUpdates.push({ id: identityId, risk_score: 0, risk_level: 'low', recommended_action: 'keep' })
+        continue
+      }
+      if (!overlay.isPrivileged) continue
+      const risk = computeIdentityRisk(
+        overlay.identityClass,
+        {
+          accountEnabled: overlay.accountEnabled,
+          invitationStatus: null,
+          createdAt: null,
+          lastSignInAt: overlay.lastActivityAt,
+          lastNonInteractiveSignInAt: null,
+          authMethods: overlay.authMethods ?? [],
+          hasSponsor: Boolean(overlay.ownerIdentityId),
+          sponsorEnabled: true,
+          domainClassification: 'unknown',
+          lastReviewedAt: overlay.lastReviewedAt,
+          memberships: [],
+          privileged: overlay,
+        },
+        policy,
+      )
+      counts[risk.level]++
+      identityUpdates.push({ id: identityId, ...identityRiskPatch(risk) })
+      scoreRows.push({
+        tenant_id: tenantId,
+        guest_id: null,
+        identity_id: identityId,
+        scan_job_id: scanJobId,
+        score: risk.score,
+        level: risk.level,
+        factors: risk.factors,
+      })
+    }
+  }
+
   await persistGuestRiskUpdates(
     (u) =>
       supabase
@@ -228,7 +278,7 @@ export async function generateFindings(tenantId: string) {
       .is('removed_at', null)
       .in('risk_level', ['critical', 'high']),
   )
-  const rows = guests.flatMap((g) => {
+  const guestRows = guests.flatMap((g) => {
     const factors = (g.risk_factors as { key: string; label: string; points: number }[]) ?? []
     const top = [...factors].sort((a, b) => b.points - a.points)[0]
     if (!top) return []
@@ -245,6 +295,59 @@ export async function generateFindings(tenantId: string) {
       },
     ]
   })
+  const covered = new Set(guestRows.map((row) => row.identity_id))
+  const privileged = await fetchAllById<{
+    id: string
+    display_name: string | null
+    primary_email: string | null
+    risk_level: string
+    is_privileged: boolean
+  }>('identities findings', () =>
+    supabase
+      .from('identities')
+      .select('id,display_name,primary_email,risk_level,is_privileged')
+      .eq('tenant_id', tenantId)
+      .is('removed_at', null)
+      .eq('is_privileged', true)
+      .in('risk_level', ['critical', 'high']),
+  )
+  const scoreFactors = await fetchAllById<{ identity_id: string | null; factors: unknown; calculated_at: string }>(
+    'risk_scores findings',
+    () =>
+      supabase
+        .from('risk_scores')
+        .select('identity_id,factors,calculated_at')
+        .eq('tenant_id', tenantId)
+        .is('guest_id', null),
+  )
+  const latestFactors = new Map<string, { key: string; label: string; points: number }[]>()
+  const latestAt = new Map<string, string>()
+  for (const row of scoreFactors) {
+    if (!row.identity_id) continue
+    const prev = latestAt.get(row.identity_id)
+    if (prev && prev >= row.calculated_at) continue
+    latestAt.set(row.identity_id, row.calculated_at)
+    latestFactors.set(row.identity_id, (row.factors as { key: string; label: string; points: number }[]) ?? [])
+  }
+  const identityRows = privileged.flatMap((identity) => {
+    if (covered.has(identity.id)) return []
+    const factors = latestFactors.get(identity.id) ?? []
+    const top = [...factors].sort((a, b) => b.points - a.points)[0]
+    if (!top) return []
+    return [
+      {
+        tenant_id: tenantId,
+        guest_id: null,
+        identity_id: identity.id,
+        severity: identity.risk_level,
+        finding_type: top.key,
+        title: `${identity.display_name ?? identity.primary_email}: ${top.label}`,
+        description: factors.map((f) => f.label).join(' · '),
+        status: 'open',
+      },
+    ]
+  })
+  const rows = [...guestRows, ...identityRows]
   await persistRiskFindings(resolveOpen, (batch) => supabase.from('risk_findings').insert(batch), rows)
   return rows.length
 }

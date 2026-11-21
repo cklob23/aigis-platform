@@ -7,6 +7,28 @@ import {
   identityRiskPatch,
   type RiskInput,
 } from '@/lib/risk/engine'
+import type { PrivilegedRiskContext } from '@/lib/risk/privileged'
+
+function privilegedStub(partial: Partial<PrivilegedRiskContext> = {}): PrivilegedRiskContext {
+  return {
+    isPrivileged: false,
+    identityClass: 'human_internal',
+    accountKind: 'user',
+    accountEnabled: true,
+    lastActivityAt: '2026-11-01T00:00:00.000Z',
+    lastReviewedAt: '2026-06-01T00:00:00.000Z',
+    ownerKind: 'assigned',
+    ownerIdentityId: 'owner-1',
+    dedicatedAdmin: true,
+    authMethods: ['microsoftAuthenticatorAuthenticationMethod'],
+    authMethodsKnown: true,
+    hasP1: true,
+    hasP2: true,
+    globalAdminCount: 2,
+    assignments: [],
+    ...partial,
+  }
+}
 
 const NOW = Date.parse('2026-11-18T00:00:00.000Z')
 
@@ -60,11 +82,27 @@ describe('computeIdentityRisk', () => {
     }
   })
 
-  it('scores stub classes at 0 with no factors', () => {
-    const stubs: IdentityClass[] = ['human_internal', 'privileged', 'non_human', 'agent']
+  it('keeps guests without roles bit-identical even when privileged is omitted or false', () => {
+    for (const sample of GOLDENS) {
+      expect(computeIdentityRisk('external', { ...sample, privileged: undefined }, undefined, NOW)).toEqual(computeRisk(sample, undefined, NOW))
+      expect(computeIdentityRisk('external', { ...sample, privileged: { ...privilegedStub(), isPrivileged: false } }, undefined, NOW)).toEqual(
+        computeRisk(sample, undefined, NOW),
+      )
+    }
+  })
+
+  it('maps class factor sets: external, privileged_only, agent stub', () => {
+    expect(CLASS_FACTOR_SETS.external).toBe('external')
+    expect(CLASS_FACTOR_SETS.human_internal).toBe('privileged_only')
+    expect(CLASS_FACTOR_SETS.non_human).toBe('privileged_only')
+    expect(CLASS_FACTOR_SETS.group).toBe('privileged_only')
+    expect(CLASS_FACTOR_SETS.privileged).toBe('privileged_only')
+    expect(CLASS_FACTOR_SETS.agent).toBe('stub')
+  })
+
+  it('keeps non-privileged internals at 0/hidden and agents stub even with overlay input', () => {
     const worst = GOLDENS[6]
-    for (const identityClass of stubs) {
-      expect(CLASS_FACTOR_SETS[identityClass]).toBe('stub')
+    for (const identityClass of ['human_internal', 'privileged', 'non_human', 'group'] as IdentityClass[]) {
       expect(computeIdentityRisk(identityClass, worst, undefined, NOW)).toEqual({
         score: 0,
         level: 'low',
@@ -72,6 +110,57 @@ describe('computeIdentityRisk', () => {
         recommendedAction: 'keep',
       })
     }
+    expect(computeIdentityRisk('agent', { ...worst, privileged: privilegedStub({ isPrivileged: true }) }, undefined, NOW)).toEqual({
+      score: 0,
+      level: 'low',
+      factors: [],
+      recommendedAction: 'keep',
+    })
+  })
+
+  it('adds overlay to any privileged identity and caps combined score at 100', () => {
+    const overlay = privilegedStub({
+      isPrivileged: true,
+      identityClass: 'human_internal',
+      assignments: [{ assignmentType: 'active', memberType: 'direct', privilegeTier: 0 }],
+    })
+    const internal = computeIdentityRisk('human_internal', input({ privileged: overlay }), undefined, NOW)
+    expect(internal.score).toBeGreaterThan(0)
+    expect(internal.factors.some((f) => f.key === 'tier0_role')).toBe(true)
+    expect(internal.recommendedAction).toBe('review')
+
+    const guest = computeIdentityRisk('external', input({ privileged: { ...overlay, identityClass: 'external', accountKind: 'guest' } }), undefined, NOW)
+    const base = computeIdentityRisk('external', input(), undefined, NOW)
+    expect(guest.score).toBeGreaterThan(base.score)
+    expect(guest.factors.some((f) => f.key === 'guest_with_role')).toBe(true)
+    expect(guest.recommendedAction).toBe('review')
+
+    const piled = computeIdentityRisk(
+      'external',
+      input({
+        domainClassification: 'blocked',
+        accountEnabled: false,
+        privileged: {
+          ...overlay,
+          identityClass: 'external',
+          accountKind: 'guest',
+          accountEnabled: false,
+          lastReviewedAt: null,
+          ownerKind: 'none',
+          ownerIdentityId: null,
+          authMethods: [],
+          globalAdminCount: 8,
+          assignments: [
+            { assignmentType: 'active', memberType: 'direct', privilegeTier: 0 },
+            { assignmentType: 'active', memberType: 'direct', privilegeTier: 1 },
+          ],
+        },
+      }),
+      undefined,
+      NOW,
+    )
+    expect(piled.score).toBe(100)
+    expect(piled.recommendedAction).toBe('review')
   })
 
   it('dual-persist patch mirrors score, level, and recommended action onto the hub', () => {

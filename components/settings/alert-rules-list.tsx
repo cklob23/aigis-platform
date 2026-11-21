@@ -16,7 +16,17 @@ import { formatDate } from '@/lib/format'
 
 type Counts = Record<string, { total: number; open: number }>
 
-export function AlertRulesList({ rules, counts, canManage }: { rules: AlertRule[]; counts: Counts; canManage: boolean }) {
+export function AlertRulesList({
+  rules,
+  counts,
+  canManage,
+  privilegedEnabled = false,
+}: {
+  rules: AlertRule[]
+  counts: Counts
+  canManage: boolean
+  privilegedEnabled?: boolean
+}) {
   const [editing, setEditing] = useState<AlertRule | null | 'new'>(null)
   const [deleting, setDeleting] = useState<AlertRule | null>(null)
   const [pending, startTransition] = useTransition()
@@ -130,7 +140,15 @@ export function AlertRulesList({ rules, counts, canManage }: { rules: AlertRule[
         )}
       </ul>
 
-      {editing !== null && <AlertRuleDialog key={editing === 'new' ? 'new' : editing.id} open onOpenChange={(o) => !o && setEditing(null)} rule={editing === 'new' ? null : editing} />}
+      {editing !== null && (
+        <AlertRuleDialog
+          key={editing === 'new' ? 'new' : editing.id}
+          open
+          onOpenChange={(o) => !o && setEditing(null)}
+          rule={editing === 'new' ? null : editing}
+          privilegedEnabled={privilegedEnabled}
+        />
+      )}
 
       <AlertDialog open={Boolean(deleting)} onOpenChange={(o) => !o && setDeleting(null)}>
         <AlertDialogContent>

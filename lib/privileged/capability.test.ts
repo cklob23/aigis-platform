@@ -10,6 +10,7 @@ import {
   groupPimReadsEnabled,
   licenseHintFromSkus,
   parsePrivilegedSettings,
+  authMethodsReadsEnabled,
   pimDirectoryReadsEnabled,
   pimStatusFromProbe,
   privilegedStageEnabled,
@@ -115,6 +116,16 @@ describe('pimDirectoryReadsEnabled / groupPimReadsEnabled', () => {
       }),
     ).toBe(false)
     expect(groupPimReadsEnabled({ privileged: { enabled: true } })).toBe(false)
+  })
+
+  it('gates auth-method $batch GETs on the privileged stage plus auth_methods', () => {
+    expect(authMethodsReadsEnabled({ privileged: { enabled: true, capability: fullCapability } })).toBe(true)
+    expect(
+      authMethodsReadsEnabled({
+        privileged: { enabled: true, capability: { ...fullCapability, auth_methods: false } },
+      }),
+    ).toBe(false)
+    expect(authMethodsReadsEnabled({ privileged: { enabled: false, capability: fullCapability } })).toBe(false)
   })
 })
 
@@ -281,6 +292,12 @@ describe('privileged module isolation', () => {
     expect(src).not.toMatch(/roleManagement\/directory\/roleDefinitions.*\$filter/)
     expect(src).not.toMatch(/roleAssignmentScheduleRequests/)
     expect(src).not.toMatch(/eligibilityScheduleRequests/)
+    const auth = readFileSync(path.join(root, 'lib/risk/auth-methods.ts'), 'utf8')
+    expect(auth).toMatch(/method: 'GET'/)
+    expect(auth).not.toMatch(/PATCH|DELETE/)
+    const stage = readFileSync(path.join(root, 'lib/scan/privileged.ts'), 'utf8')
+    expect(stage).toMatch(/g\.batch/)
+    expect(stage).not.toMatch(/g\.(post|patch|delete)\(/)
   })
 
   it('inventories roles only from the flag-gated privileged stage', () => {
@@ -292,6 +309,9 @@ describe('privileged module isolation', () => {
     expect(stage).toMatch(/privileged\.inventory_synced/)
     expect(stage).toMatch(/pimDirectoryReadsEnabled/)
     expect(stage).toMatch(/groupPimReadsEnabled/)
+    expect(stage).toMatch(/authMethodsReadsEnabled/)
+    expect(stage).toMatch(/persistRoleHolderAuthMethods/)
+    expect(stage).toMatch(/AUTH_METHOD_BATCH_SIZE/)
     expect(stage).toMatch(/fetchRoleEligibilitySchedules/)
     expect(stage).toMatch(/fetchGroupEligibilitySchedules/)
     expect(stage).toMatch(/pimOn \? await fetchRoleEligibilitySchedules/)

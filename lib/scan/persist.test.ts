@@ -52,10 +52,19 @@ describe('persistRiskScores', () => {
 })
 
 describe('persistRiskFindings', () => {
+  it('accepts identity-only rows and rejects rows with neither key', async () => {
+    const insertBatch = vi.fn(async () => ({ error: null }))
+    await persistRiskFindings(async () => ({ error: null }), insertBatch, [{ guest_id: null, identity_id: 'i1', title: 'x' }])
+    expect(insertBatch).toHaveBeenCalledWith([{ guest_id: null, identity_id: 'i1', title: 'x' }])
+    await expect(
+      persistRiskFindings(async () => ({ error: null }), insertBatch, [{ title: 'x' }]),
+    ).rejects.toThrow('risk_findings insert: guest_id or identity_id is required')
+  })
+
   it('throws when resolving open findings fails, before insert', async () => {
     const insertBatch = vi.fn(async () => ({ error: null }))
     await expect(
-      persistRiskFindings(async () => ({ error: { message: 'could not update' } }), insertBatch, [{ title: 'x' }]),
+      persistRiskFindings(async () => ({ error: { message: 'could not update' } }), insertBatch, [{ guest_id: 'g1', title: 'x' }]),
     ).rejects.toThrow('risk_findings resolve open: could not update')
     expect(insertBatch).not.toHaveBeenCalled()
   })
@@ -65,7 +74,7 @@ describe('persistRiskFindings', () => {
       persistRiskFindings(
         async () => ({ error: null }),
         async () => ({ error: { message: 'batch too large' } }),
-        [{ title: 'x' }],
+        [{ guest_id: 'g1', title: 'x' }],
       ),
     ).rejects.toThrow('risk_findings insert: batch too large')
   })

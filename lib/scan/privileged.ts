@@ -20,7 +20,9 @@ import {
   type InternalInventoryPlan,
 } from '@/lib/identity/ingest'
 import { writeInternalInventory, writePrivilegedInventory } from '@/lib/identity/write-inventory'
-import { groupPimReadsEnabled, pimDirectoryReadsEnabled } from '@/lib/privileged/capability'
+import { authMethodsReadsEnabled, groupPimReadsEnabled, pimDirectoryReadsEnabled } from '@/lib/privileged/capability'
+import { AUTH_METHOD_BATCH_SIZE, chunkAuthMethodRequests, parseAuthMethodTypes } from '@/lib/risk/auth-methods'
+import { mustWrite } from '@/lib/supabase/write'
 import { mapPimMemberType, planPrivilegedInventory, scheduleBounds } from '@/lib/privileged/ingest'
 import { fetchAllById } from '@/lib/supabase/page'
 
@@ -266,6 +268,9 @@ export async function runPrivilegedStage(
     pimGroups: groupPimOn ? 'available' : 'skipped',
   })
   await writePrivilegedInventory(rolePlan)
+  if (authMethodsReadsEnabled(settings)) {
+    await persistRoleHolderAuthMethods(g, tenantId, rolePlan.identityPatches.filter((row) => row.is_privileged).map((row) => row.id))
+  }
   await audit({ tenantId, userId: '', email: 'system' } as never, {
     action: 'privileged.inventory_synced',
     targetType: 'tenant',
@@ -274,4 +279,51 @@ export async function runPrivilegedStage(
     correlationId: jobId,
   })
   return plan
+}
+
+/** GET-only $batch of 20 for role holders. Skips service principals and groups. */
+async function persistRoleHolderAuthMethods(g: GraphClient, tenantId: string, identityIds: string[]) {
+  if (identityIds.length === 0) return
+  const supabase = db()
+  const accounts = await fetchAllById<{
+    id: string
+    identity_id: string
+    source_object_id: string
+    account_kind: string
+    attrs: Record<string, unknown> | null
+  }>('identity_accounts auth methods', () =>
+    supabase
+      .from('identity_accounts')
+      .select('id,identity_id,source_object_id,account_kind,attrs')
+      .eq('tenant_id', tenantId)
+      .eq('source', 'entra')
+      .is('removed_at', null)
+      .in('identity_id', identityIds),
+  )
+  const holders = accounts.filter((row) => row.account_kind === 'user' || row.account_kind === 'guest')
+  const byRequestId = new Map<string, (typeof holders)[number]>()
+  for (const batch of chunk(holders, AUTH_METHOD_BATCH_SIZE)) {
+    const requests = chunkAuthMethodRequests(batch.map((row) => row.source_object_id))[0] ?? []
+    requests.forEach((req, i) => byRequestId.set(req.id, batch[i]))
+    const results = await g.batch<{ value?: { '@odata.type'?: string }[] }>(requests)
+    for (const [id, result] of Object.entries(results)) {
+      const account = byRequestId.get(id)
+      if (!account) continue
+      if (result.status !== 200) continue
+      const methods = parseAuthMethodTypes(result.body)
+      if (!methods) continue
+      const attrs = { ...(account.attrs ?? {}), auth_methods: methods }
+      mustWrite(
+        'identity_accounts auth_methods',
+        await supabase.from('identity_accounts').update({ attrs }).eq('id', account.id).eq('tenant_id', tenantId),
+      )
+      if (account.account_kind === 'guest') {
+        mustWrite(
+          'guest_identities auth_methods',
+          await supabase.from('guest_identities').update({ auth_methods: methods }).eq('identity_id', account.identity_id).eq('tenant_id', tenantId),
+        )
+      }
+    }
+    byRequestId.clear()
+  }
 }

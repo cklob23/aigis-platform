@@ -1,4 +1,5 @@
 import type { DomainClassification, IdentityClass, RecommendedAction, RiskFactor, RiskLevel } from '@/lib/types'
+import { overlayRecommendedAction, scorePrivilegedOverlay, type PrivilegedRiskContext } from '@/lib/risk/privileged'
 
 export type RiskInput = {
   accountEnabled: boolean
@@ -12,6 +13,7 @@ export type RiskInput = {
   domainClassification: DomainClassification
   lastReviewedAt: string | null
   memberships: { isSensitive: boolean; isOwner: boolean; type: string }[]
+  privileged?: PrivilegedRiskContext | null
 }
 
 export type RiskPolicyConfig = {
@@ -45,18 +47,20 @@ export type IdentityRiskResult = {
 
 const STUB_RESULT: IdentityRiskResult = { score: 0, level: 'low', factors: [], recommendedAction: 'keep' }
 
-/** Guest factors. Other classes are reserved stubs (score 0) until their scanners exist. */
-export const CLASS_FACTOR_SETS: Record<IdentityClass, 'external' | 'stub'> = {
+/** Guest factors, privileged overlay, or reserved stub (score 0). */
+export const CLASS_FACTOR_SETS: Record<IdentityClass, 'external' | 'privileged_only' | 'stub'> = {
   external: 'external',
-  human_internal: 'stub',
-  privileged: 'stub',
-  non_human: 'stub',
+  human_internal: 'privileged_only',
+  privileged: 'privileged_only',
+  non_human: 'privileged_only',
+  group: 'privileged_only',
   agent: 'stub',
 }
 
 /**
- * Shared identity risk. External uses the current guest factor set bit-identical.
- * Stub classes return score 0 / keep. Does not write Graph or remediate.
+ * Shared identity risk. External uses the current guest factor set bit-identical
+ * when no privileged overlay applies. Privileged-only classes stay 0 until
+ * `privileged.isPrivileged`. Combined score caps at 100. Does not write Graph.
  */
 export function computeIdentityRisk(
   identityClass: IdentityClass,
@@ -64,8 +68,20 @@ export function computeIdentityRisk(
   policy: RiskPolicyConfig = DEFAULT_RISK_POLICY,
   now = Date.now(),
 ): IdentityRiskResult {
-  if (CLASS_FACTOR_SETS[identityClass] !== 'external') return STUB_RESULT
-  return scoreExternal(input, policy, now)
+  const set = CLASS_FACTOR_SETS[identityClass]
+  if (set === 'stub') return STUB_RESULT
+  const base = set === 'external' ? scoreExternal(input, policy, now) : STUB_RESULT
+  if (!input.privileged?.isPrivileged) return base
+  const overlay = scorePrivilegedOverlay(input.privileged, policy, now)
+  const factors = [...base.factors, ...overlay.factors]
+  const score = Math.min(100, base.score + overlay.score)
+  const level = levelFor(score)
+  return {
+    score,
+    level,
+    factors,
+    recommendedAction: overlayRecommendedAction(level, base.recommendedAction),
+  }
 }
 
 /** Hub columns mirrored from a score. Guest rows also keep risk_factors. */

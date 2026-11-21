@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { EmailDeliveryCard } from '@/components/settings/email-delivery-card'
 import { AlertRulesList } from '@/components/settings/alert-rules-list'
 import { EmailLog } from '@/components/settings/email-log'
+import { parsePrivilegedSettings } from '@/lib/privileged/capability'
 
 export const metadata = { title: 'Alert rules' }
 
@@ -26,6 +27,7 @@ export default async function AlertSettingsPage({ searchParams }: { searchParams
   const canManageRules = can(session.role, 'policy.manage')
   const lastDelivery = log.find((e) => e.status !== 'skipped') ?? null
   const mailSendGranted = roles ? roles.includes('Mail.Send') : null
+  const privilegedEnabled = parsePrivilegedSettings(tenant.settings).enabled
 
   return (
     <>
@@ -55,7 +57,12 @@ export default async function AlertSettingsPage({ searchParams }: { searchParams
           <CardDescription>Conditions evaluated after every scan and daily. New matches become alerts and are emailed to the recipients on the rule.</CardDescription>
         </CardHeader>
         <CardContent>
-          <AlertRulesList rules={rules} counts={Object.fromEntries(counts)} canManage={canManageRules} />
+          <AlertRulesList
+            rules={rules}
+            counts={Object.fromEntries(counts)}
+            canManage={canManageRules}
+            privilegedEnabled={privilegedEnabled}
+          />
         </CardContent>
       </Card>
 
