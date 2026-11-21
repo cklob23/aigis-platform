@@ -13,7 +13,7 @@ import {
   type PrivilegedHighestRisk,
   type PrivilegedSummary,
 } from '@/lib/privileged/view'
-import { formatDate, formatNumber, relativeDays } from '@/lib/format'
+import { formatNumber, relativeDays } from '@/lib/format'
 import { RiskBadge } from '@/components/risk/risk-badge'
 import { DORMANT_ADMIN_DAYS, daysSince, privilegedReviewPastCadence } from '@/lib/risk/privileged'
 
@@ -27,7 +27,7 @@ export function PrivilegedOverview({
   links?: boolean
 }) {
   const standingHint = summary.pimAvailable
-    ? `Permanent assignments ${formatNumber(summary.standing)} / of ${formatNumber(summary.assignments)}, PIM available`
+    ? `of ${formatNumber(summary.assignments)}, PIM available`
     : pimUnavailableStandingLabel(summary.assignments)
 
   return (
@@ -69,41 +69,57 @@ export function PrivilegedOverview({
           <CardDescription>
             {summary.pimAvailable
               ? 'Assignment mix across privileged directory roles.'
-              : pimUnavailableStandingLabel(summary.assignments)}
+              : 'PIM is not available, so eligible versus permanent is not shown.'}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <AssignmentMixBar summary={summary} showTitle={false} />
           {summary.pimAvailable && (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/40 hover:bg-muted/40">
-                    <TableHead>Tier</TableHead>
-                    <TableHead>Holders</TableHead>
-                    <TableHead>Permanent</TableHead>
-                    <TableHead>Eligible</TableHead>
-                    <TableHead>Time-bound</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {([0, 1, 2] as const).map((tier) => {
-                    const row = tier === 0 ? summary.byTierAssignments.t0 : tier === 1 ? summary.byTierAssignments.t1 : summary.byTierAssignments.t2
-                    return (
-                      <TableRow key={tier}>
-                        <TableCell>
-                          <TierBadge tier={tier} />
-                        </TableCell>
-                        <TableCell className="tnum">{formatNumber(row.holders)}</TableCell>
-                        <TableCell className="tnum">{formatNumber(row.permanent)}</TableCell>
-                        <TableCell className="tnum">{formatNumber(row.eligible)}</TableCell>
-                        <TableCell className="tnum">{formatNumber(row.timeBound)}</TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+            <>
+              <div className="hidden overflow-x-auto sm:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/40 hover:bg-muted/40">
+                      <TableHead>Tier</TableHead>
+                      <TableHead>Holders</TableHead>
+                      <TableHead>Permanent</TableHead>
+                      <TableHead>Eligible</TableHead>
+                      <TableHead>Time-bound</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {([0, 1, 2] as const).map((tier) => {
+                      const row = tier === 0 ? summary.byTierAssignments.t0 : tier === 1 ? summary.byTierAssignments.t1 : summary.byTierAssignments.t2
+                      return (
+                        <TableRow key={tier}>
+                          <TableCell>
+                            <TierBadge tier={tier} />
+                          </TableCell>
+                          <TableCell className="tnum">{formatNumber(row.holders)}</TableCell>
+                          <TableCell className="tnum">{formatNumber(row.permanent)}</TableCell>
+                          <TableCell className="tnum">{formatNumber(row.eligible)}</TableCell>
+                          <TableCell className="tnum">{formatNumber(row.timeBound)}</TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="flex flex-col divide-y sm:hidden">
+                {([0, 1, 2] as const).map((tier) => {
+                  const row = tier === 0 ? summary.byTierAssignments.t0 : tier === 1 ? summary.byTierAssignments.t1 : summary.byTierAssignments.t2
+                  return (
+                    <div key={tier} className="flex flex-col gap-1 py-2 first:pt-0 last:pb-0">
+                      <TierBadge tier={tier} />
+                      <p className="text-muted-foreground text-xs">
+                        Holders {formatNumber(row.holders)} · Permanent {formatNumber(row.permanent)} · Eligible{' '}
+                        {formatNumber(row.eligible)} · Time-bound {formatNumber(row.timeBound)}
+                      </p>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -114,24 +130,31 @@ export function PrivilegedOverview({
             <CardTitle>Highest-risk role holders</CardTitle>
             <CardDescription>Privilege is a flag on the identity. Ranked by current risk score.</CardDescription>
           </CardHeader>
-          <CardContent className="overflow-x-auto px-0">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead>Identity</TableHead>
-                  <TableHead>Class</TableHead>
-                  <TableHead>Highest tier</TableHead>
-                  <TableHead>Roles</TableHead>
-                  <TableHead>Last sign-in</TableHead>
-                  <TableHead>Risk</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {highestRisk.map((row) => (
-                  <HighestRiskRow key={row.identityId} row={row} />
-                ))}
-              </TableBody>
-            </Table>
+          <CardContent className="px-0">
+            <div className="hidden overflow-x-auto sm:block">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/40 hover:bg-muted/40">
+                    <TableHead>Identity</TableHead>
+                    <TableHead>Class</TableHead>
+                    <TableHead>Highest tier</TableHead>
+                    <TableHead>Roles</TableHead>
+                    <TableHead>Last sign-in</TableHead>
+                    <TableHead>Risk</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {highestRisk.map((row) => (
+                    <HighestRiskRow key={row.identityId} row={row} />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="flex flex-col sm:hidden">
+              {highestRisk.map((row) => (
+                <HighestRiskStacked key={row.identityId} row={row} />
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}
@@ -145,7 +168,7 @@ export function PrivilegedOverview({
           <CardContent className="flex flex-col divide-y text-sm">
             <CountRow label="Internal user" value={summary.whoHolds.internalUser} />
             <CountRow label="Dedicated admin" value={summary.whoHolds.dedicatedAdmin} />
-            <CountRow label="Guests" value={summary.whoHolds.guests} />
+            <CountRow label="External identities" value={summary.whoHolds.guests} />
             <CountRow label="Service principals" value={summary.whoHolds.servicePrincipals} />
             <CountRow label="Identities via groups" value={summary.whoHolds.viaGroups} />
           </CardContent>
@@ -175,35 +198,11 @@ export function PrivilegedOverview({
         </Card>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Review cadence</CardTitle>
-            <CardDescription>
-              {formatNumber(summary.overdueReviews)} overdue, {formatNumber(summary.neverReviewed)} never reviewed
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2 text-sm">
-            <div className="flex items-center justify-between">
-              <span>Last privileged review</span>
-              <span className="tnum">{formatDate(summary.reviews.lastCompletedAt ?? summary.lastPrivilegedReviewAt)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Next due</span>
-              <span className="tnum">{formatDate(summary.reviews.nextDueAt)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Overdue</span>
-              <span className="tnum">{formatNumber(summary.overdueReviews)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Never reviewed</span>
-              <span className="tnum">{formatNumber(summary.neverReviewed)}</span>
-            </div>
-          </CardContent>
-        </Card>
-        <PrivilegedReviewsCard reviews={summary.reviews} />
-      </section>
+      <PrivilegedReviewsCard
+        reviews={summary.reviews}
+        overdueReviews={summary.overdueReviews}
+        neverReviewed={summary.neverReviewed}
+      />
     </div>
   )
 }
@@ -217,16 +216,30 @@ function CountRow({ label, value }: { label: string; value: number }) {
   )
 }
 
+function HighestRiskChips({ row }: { row: PrivilegedHighestRisk }) {
+  const neverReviewed = !row.lastReviewedAt
+  const overdue = privilegedReviewPastCadence(row.lastReviewedAt)
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      <RiskBadge level={row.riskLevel} />
+      <span className="tnum text-xs">{row.riskScore}</span>
+      {neverReviewed && <span className="rounded bg-[#FEF3C7] px-1 text-[10px] font-medium text-[#B45309]">Never reviewed</span>}
+      {overdue && !neverReviewed && (
+        <span className="rounded bg-[#FEF3C7] px-1 text-[10px] font-medium text-[#B45309]">Review overdue</span>
+      )}
+    </div>
+  )
+}
+
 function HighestRiskRow({ row }: { row: PrivilegedHighestRisk }) {
   const idle = daysSince(row.lastActivityAt)
   const dormant = row.lastActivityAt == null || (idle !== null && idle >= DORMANT_ADMIN_DAYS)
-  const overdue = privilegedReviewPastCadence(row.lastReviewedAt)
   return (
     <TableRow>
       <TableCell>
-        <Link href={`/privileged?tab=holders&q=${encodeURIComponent(row.displayName ?? row.email ?? '')}`} className="flex min-w-0 flex-col hover:underline">
-          <span className="font-medium">{row.displayName ?? row.email}</span>
-          <span className="truncate font-mono text-muted-foreground text-xs">{row.email}</span>
+        <Link href={`/privileged?tab=holders&q=${encodeURIComponent(row.displayName ?? row.identifier ?? '')}`} className="flex min-w-0 flex-col hover:underline">
+          <span className="font-medium">{row.displayName ?? row.identifier}</span>
+          <span className="truncate font-mono text-muted-foreground text-xs">{row.identifier}</span>
         </Link>
       </TableCell>
       <TableCell className="text-xs">{privilegedClassLabel(row.identityClass, row.dedicatedAdmin)}</TableCell>
@@ -236,12 +249,24 @@ function HighestRiskRow({ row }: { row: PrivilegedHighestRisk }) {
       <TableCell className="max-w-56 truncate text-sm">{row.roleNames.join(', ')}</TableCell>
       <TableCell className={dormant ? 'tnum text-destructive' : 'tnum'}>{relativeDays(row.lastActivityAt)}</TableCell>
       <TableCell>
-        <div className="flex flex-wrap items-center gap-1">
-          <RiskBadge level={row.riskLevel} />
-          <span className="tnum text-xs">{row.riskScore}</span>
-          {overdue && <span className="rounded bg-[#FEF3C7] px-1 text-[10px] font-medium text-[#B45309]">Overdue</span>}
-        </div>
+        <HighestRiskChips row={row} />
       </TableCell>
     </TableRow>
+  )
+}
+
+function HighestRiskStacked({ row }: { row: PrivilegedHighestRisk }) {
+  return (
+    <div className="flex flex-col gap-2 border-b px-4 py-3 last:border-b-0">
+      <Link href={`/privileged?tab=holders&q=${encodeURIComponent(row.displayName ?? row.identifier ?? '')}`} className="flex min-w-0 flex-col hover:underline">
+        <span className="font-medium">{row.displayName ?? row.identifier}</span>
+        <span className="truncate font-mono text-muted-foreground text-xs">{row.identifier}</span>
+      </Link>
+      <div className="flex flex-wrap items-center gap-2">
+        <TierBadge tier={row.privilegeTier} />
+        <span className="text-sm">{row.roleNames.join(', ')}</span>
+        <HighestRiskChips row={row} />
+      </div>
+    </div>
   )
 }

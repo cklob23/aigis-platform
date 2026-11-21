@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { DASHBOARD_SUBTITLE_GUESTS_ONLY, DASHBOARD_SUBTITLE_PRIVILEGED } from '@/lib/privileged/copy'
+import { DASHBOARD_SUBTITLE_GUESTS_ONLY, DASHBOARD_SUBTITLE_PRIVILEGED, REMEDIATION_PLACEHOLDER } from '@/lib/privileged/copy'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
@@ -25,5 +25,10 @@ describe('dashboard subtitle copy', () => {
     expect(sidebar).toContain("item.href === '/guests' &&")
     expect(sidebar).toContain('More identity types coming')
     expect(sidebar).not.toMatch(/Alerts[\s\S]{0,200}More identity types coming/)
+  })
+
+  it('uses the coming-soon remediation copy', () => {
+    expect(REMEDIATION_PLACEHOLDER).toContain('Mark change made')
+    expect(REMEDIATION_PLACEHOLDER).toContain('AIGIS confirms it on the next scan')
   })
 })

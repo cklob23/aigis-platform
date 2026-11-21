@@ -18,7 +18,6 @@ export function PrivilegedPage({
   pim,
   detail,
   canExport,
-  canStartReview,
   canRecheck,
   exportHref,
   initialTab = 'overview',
@@ -27,7 +26,6 @@ export function PrivilegedPage({
   pim: PrivilegedPimStatus
   detail: PrivilegedDetail
   canExport: boolean
-  canStartReview: boolean
   canRecheck: boolean
   exportHref: string
   initialTab?: PrivilegedTab
@@ -40,18 +38,11 @@ export function PrivilegedPage({
         title="Privileged access"
         description={privilegedDashboardCardSubtitle(detail.summary.holders, detail.summary.assignments)}
         actions={
-          <>
-            {canStartReview ? (
-              <Button nativeButton={false} render={<Link href="/reviews" />}>
-                Start privileged review
-              </Button>
-            ) : null}
-            {canExport ? (
-              <Button variant="outline" nativeButton={false} render={<Link href={exportHref} />}>
-                Export CSV
-              </Button>
-            ) : null}
-          </>
+          canExport ? (
+            <Button variant="outline" nativeButton={false} render={<Link href={exportHref} />}>
+              Export CSV
+            </Button>
+          ) : null
         }
       />
       <PimBanner pim={pim} recheck={<PimRecheckButton canRecheck={canRecheck} />} />
@@ -60,7 +51,6 @@ export function PrivilegedPage({
         counts={{
           holders: detail.summary.holders,
           roles: privilegedRoles,
-          remediation: detail.summary.remediationCount,
         }}
         panels={{
           overview: <PrivilegedOverview summary={detail.summary} highestRisk={detail.highestRisk} />,

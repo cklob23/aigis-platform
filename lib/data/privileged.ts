@@ -23,6 +23,7 @@ type FindingQueryRow = { finding_type: string; title: string; identity_id: strin
 type AccountQueryRow = {
   identity_id: string
   account_kind: string | null
+  source_object_id: string | null
   attrs: Record<string, unknown> | null
 }
 
@@ -68,7 +69,7 @@ async function loadPrivilegedRows(tenantId: string, settings: Record<string, unk
     fetchAllById<AccountQueryRow>('identity_accounts privileged', () =>
       supabase
         .from('identity_accounts')
-        .select('identity_id,account_kind,attrs')
+        .select('identity_id,account_kind,source_object_id,attrs')
         .eq('tenant_id', tenantId)
         .eq('source', 'entra')
         .is('removed_at', null),
@@ -86,11 +87,13 @@ async function loadPrivilegedRows(tenantId: string, settings: Record<string, unk
   const patchedIdentities: PrivilegedIdentityRow[] = identities.map((row) => {
     const account = accountByIdentity.get(row.id)
     const attrs = account?.attrs ?? null
+    const attrAppId = attrs && typeof attrs.appId === 'string' ? attrs.appId : typeof attrs?.app_id === 'string' ? attrs.app_id : null
     return {
       ...row,
       owner_display_name: row.owner_display_name ?? null,
       dedicated_admin: Boolean(attrs?.dedicated_admin),
       auth_methods: authMethodsFromAttrs(attrs),
+      app_id: row.identity_class === 'non_human' ? attrAppId ?? account?.source_object_id ?? null : null,
     }
   })
 

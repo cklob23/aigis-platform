@@ -1,6 +1,11 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 import { PimBanner } from '@/components/privileged/pim-banner'
 import { HoldersTableStatic } from '@/components/privileged/holders-table'
 import { RolesTable } from '@/components/privileged/roles-table'
@@ -56,7 +61,7 @@ describe('HoldersTable state column', () => {
 
   it('dedupes Adele Global Administrator into one Permanent + Eligible row', () => {
     const html = renderToStaticMarkup(createElement(HoldersTableStatic, { holders: p2.holders, pimAvailable: true }))
-    expect(html.match(/Adele Vance/g)?.length).toBe(1)
+    expect(html.match(/Adele Vance/g)?.length).toBe(2)
     expect(html).toContain('Permanent + Eligible')
     expect(html).not.toContain('Directory Readers')
   })
@@ -66,9 +71,13 @@ describe('HoldersTable state column', () => {
     expect(html).toContain('MFA method')
     expect(html).toContain('Owner')
     expect(html).toContain('Showing')
-    expect(html).toContain('Overdue')
-    expect(html).toContain('Never')
+    expect(html).toContain('Review overdue')
+    expect(html).toContain('Never reviewed')
     expect(html).toContain('Internal user')
+    expect(html).toContain('External user')
+    expect(html).not.toContain('>Guest<')
+    expect(html).toContain('app id 7f3c…b21e')
+    expect(html).not.toContain('hr-sync@northwind.example')
   })
 })
 
@@ -88,6 +97,12 @@ describe('RolesTable', () => {
     expect(html).toContain('26 privileged roles, 25 held in this tenant')
     expect(html).toContain('Last review')
     expect(html).toContain('Never')
+    expect(html).toContain('Holders 7')
+    expect(html).toContain('Permanent 5')
+    expect(html).toContain('Eligible 2')
+    expect(html).toContain('Jul 1, 2026')
+    expect(html).toContain('Overdue')
+    expect(html).toContain('Can manage all of Microsoft Entra ID')
     expect(html).not.toMatch(/<td[^>]*>Directory Readers/)
     expect(html).not.toMatch(/<td[^>]*>Guest Inviter/)
     for (const name of TIER_0_DIRECTORY_ROLES) {
@@ -114,7 +129,8 @@ describe('ReadOnlySummary', () => {
 describe('RemediationPlaceholder', () => {
   it('keeps the tab as a placeholder', () => {
     const html = renderToStaticMarkup(createElement(RemediationPlaceholder))
-    expect(html).toContain(REMEDIATION_PLACEHOLDER)
+    expect(html).toContain('Mark change made')
+    expect(html).toContain('AIGIS confirms it on the next scan')
   })
 })
 
@@ -135,14 +151,30 @@ describe('PrivilegedDashboardCard', () => {
 describe('PrivilegedOverview', () => {
   it('counts standing by assignments and hides standing T0 when there is no P2', () => {
     const p2Html = renderToStaticMarkup(createElement(PrivilegedOverview, { summary: p2.summary, highestRisk: p2.highestRisk }))
-    expect(p2Html).toContain('Permanent assignments 64 / of 142, PIM available')
+    expect(p2Html).toContain('of 142, PIM available')
+    expect(p2Html).not.toContain('Permanent assignments 64 / of 142')
     expect(p2Html).toContain('4 overdue, 6 never reviewed')
     expect(p2Html).toContain('Next due')
+    expect(p2Html).toContain('Nov 18, 2026 · overdue')
+    expect(p2Html).toContain('Preview')
     expect(p2Html).toContain('Highest-risk role holders')
     expect(p2Html).toContain('Tenant findings')
+    expect(p2Html).toContain('Permanent Tier 0 assignment')
+    expect(p2Html).toContain('External identities')
+    expect(p2Html).not.toContain('>Guests<')
+    expect(p2Html.match(/Standing vs just-in-time/g)?.length).toBe(1)
 
     const noP2Html = renderToStaticMarkup(createElement(PrivilegedOverview, { summary: noP2.summary }))
     expect(noP2Html).toContain('all 74 shown as active')
+    expect(noP2Html.match(/all 74 shown as active/g)?.length).toBe(1)
+    expect(noP2Html).not.toContain('Permanent Tier 0 assignment')
     expect(noP2Html).not.toContain('Standing Tier 0 assignment')
+  })
+})
+
+describe('placeholder copy', () => {
+  it('does not offer Start privileged review yet', () => {
+    const src = readFileSync(path.join(root, 'components/privileged/privileged-page.tsx'), 'utf8')
+    expect(src).not.toContain('Start privileged review')
   })
 })

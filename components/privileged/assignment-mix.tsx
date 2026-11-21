@@ -1,15 +1,11 @@
 import { formatNumber } from '@/lib/format'
 import type { PrivilegedSummary } from '@/lib/privileged/view'
-import { pimUnavailableStandingLabel } from '@/lib/privileged/copy'
 
 export function AssignmentMixBar({ summary, showTitle = true }: { summary: PrivilegedSummary; showTitle?: boolean }) {
   if (!summary.pimAvailable) {
     return (
       <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-2">
-          {showTitle ? <span className="font-medium text-sm">Standing vs just-in-time</span> : <span />}
-          <span className="text-muted-foreground text-xs">{pimUnavailableStandingLabel(summary.assignments)}</span>
-        </div>
+        {showTitle ? <span className="font-medium text-sm">Standing vs just-in-time</span> : null}
         <div className="flex h-2 overflow-hidden rounded-full bg-muted">
           <div className="h-full w-full bg-foreground/40" />
         </div>

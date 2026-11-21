@@ -1,3 +1,5 @@
+import { TIER_0_DIRECTORY_ROLES } from '@/lib/privileged/tiers'
+
 export const DASHBOARD_SUBTITLE_GUESTS_ONLY =
   'Governing external identities today. Privileged, non-human, and AI agent types will use the same reviews and audit model.'
 
@@ -11,7 +13,7 @@ export const AZURE_RBAC_COMING_LATER = 'Coming later'
 export const AZURE_RBAC_FILTER_PILL = 'Azure RBAC · Coming later'
 
 export const REMEDIATION_PLACEHOLDER =
-  'Remediation for privileged access will arrive in a later update. Request, approve, and mark-as-made stay on this tab when that work ships.'
+  "Remediation is coming soon. You'll request a change, get approval, make it in Microsoft, use Mark change made, and AIGIS confirms it on the next scan."
 
 export const READ_ONLY_PRIVILEGED_TITLE = 'Details are limited to audit roles'
 
@@ -62,4 +64,23 @@ export function privilegedRolesSubtitle(privilegedRoles: number, held: number) {
 
 export function pimUnavailableStandingLabel(assignments: number) {
   return `all ${assignments} shown as active`
+}
+
+export const TIER_0_ROLE_DESCRIPTIONS: Record<(typeof TIER_0_DIRECTORY_ROLES)[number], string> = {
+  'Global Administrator': 'Can manage all of Microsoft Entra ID and Microsoft services that use Entra identities.',
+  'Privileged Role Administrator': 'Can manage Entra role assignments and Privileged Identity Management.',
+  'Privileged Authentication Administrator': 'Can set or reset authentication methods for any user, including Global Administrators.',
+  'Conditional Access Administrator': 'Can manage Microsoft Entra Conditional Access settings.',
+  'Application Administrator': 'Can create and manage app registrations and enterprise apps.',
+  'Cloud Application Administrator': 'Can manage app registrations and enterprise apps except App Proxy.',
+  'Hybrid Identity Administrator': 'Can manage Microsoft Entra Connect, pass-through authentication, and federation.',
+  'Directory Synchronization Accounts': 'Used only by Microsoft Entra Connect.',
+  'Domain Name Administrator': 'Can manage domain names in Microsoft Entra ID and Microsoft 365.',
+  'External Identity Provider Administrator': 'Can configure identity providers for direct federation.',
+  'Authentication Policy Administrator': 'Can configure authentication methods policy, MFA, and password protection.',
+  'Partner Tier2 Support': 'Can reset passwords and session tokens for non-administrators and some admin roles.',
+}
+
+export function tier0RoleDescription(name: string): string | null {
+  return TIER_0_ROLE_DESCRIPTIONS[name as keyof typeof TIER_0_ROLE_DESCRIPTIONS] ?? null
 }

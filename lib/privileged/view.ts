@@ -1,6 +1,7 @@
 import type { IdentityClass, RiskLevel } from '@/lib/types'
 import { DORMANT_ADMIN_DAYS, PRIVILEGED_REVIEW_DAYS, daysSince, privilegedReviewPastCadence } from '@/lib/risk/privileged'
 import { TIER_0_DIRECTORY_ROLES } from '@/lib/privileged/tiers'
+import { tier0RoleDescription } from '@/lib/privileged/copy'
 
 export type PrivilegedAssignmentState = 'permanent' | 'eligible' | 'time_bound' | 'activated' | 'active'
 
@@ -14,7 +15,7 @@ export const ASSIGNMENT_STATE_LABEL: Record<PrivilegedAssignmentState, string> =
 
 export const IDENTITY_CLASS_LABEL: Record<IdentityClass, string> = {
   human_internal: 'Internal user',
-  external: 'Guest',
+  external: 'External user',
   privileged: 'Privileged',
   non_human: 'Service principal',
   group: 'Group',
@@ -39,7 +40,7 @@ export const FINDING_EXPLANATIONS: Record<string, string> = {
   sp_with_role: 'Flagged here. Full app review comes with non-human identities.',
   role_via_unowned_group: 'A role-assignable group that grants an admin role has no owner.',
   guest_with_role: 'An external identity holds a privileged directory role (any tier).',
-  permanent_tier0: 'Standing (permanent) Tier 0 assignment while PIM is available.',
+  permanent_tier0: 'Permanent Tier 0 assignment while PIM is available.',
   permanent_tier1: 'Standing (permanent) Tier 1 assignment while PIM is available.',
   privileged_review_overdue: 'Privileged access not reviewed in the last 90 days.',
   dormant_admin: 'A privileged account has not signed in for 90 days or more.',
@@ -62,6 +63,7 @@ export type PrivilegedIdentityRow = {
   owner_display_name?: string | null
   dedicated_admin?: boolean
   auth_methods?: string[] | null
+  app_id?: string | null
 }
 
 export type PrivilegedAssignmentRow = {
@@ -154,6 +156,7 @@ export type PrivilegedHolder = {
   status: string
   ownerDisplayName: string | null
   mfaLabel: string
+  identifier: string
   topFactor: string | null
 }
 
@@ -169,6 +172,7 @@ export type PrivilegedHighestRisk = {
   lastReviewedAt: string | null
   riskScore: number
   riskLevel: RiskLevel
+  identifier: string
   topFactor: string | null
 }
 
@@ -264,7 +268,35 @@ export function visiblePrivilegedFindings(
 
 export function displayFindingTitle(findingType: string, fallback: string) {
   if (findingType === 'guest_with_role') return 'External identity with an admin role'
+  if (findingType === 'permanent_tier0') return 'Permanent Tier 0 assignment'
   return fallback
+}
+
+export function truncatedAppId(appId: string) {
+  const id = appId.trim()
+  if (id.length <= 8) return id
+  return `${id.slice(0, 4)}…${id.slice(-4)}`
+}
+
+export function holderIdentifier(identity: Pick<PrivilegedIdentityRow, 'identity_class' | 'primary_email' | 'app_id'>) {
+  if (identity.identity_class === 'non_human') {
+    if (!identity.app_id) return '—'
+    return `app id ${truncatedAppId(identity.app_id)}`
+  }
+  return identity.primary_email ?? '—'
+}
+
+export function nextPrivilegedReviewDueAt(lastCompletedAt: string | null, cadenceDays = PRIVILEGED_REVIEW_DAYS) {
+  if (!lastCompletedAt) return null
+  const d = new Date(lastCompletedAt)
+  if (Number.isNaN(d.getTime())) return null
+  d.setUTCDate(d.getUTCDate() + cadenceDays)
+  return d.toISOString()
+}
+
+export function privilegedReviewDueOverdue(nextDueAt: string | null, now = Date.now()) {
+  if (!nextDueAt) return false
+  return new Date(nextDueAt).getTime() < now
 }
 
 export function summarizePrivileged(
@@ -432,6 +464,7 @@ export function buildPrivilegedHolders(
       status: identity.status,
       ownerDisplayName: identity.owner_display_name ?? null,
       mfaLabel: mfaMethodLabel(identity.identity_class, identity.auth_methods),
+      identifier: holderIdentifier(identity),
       topFactor: topFactorByIdentity[identity.id] ?? null,
     })
   }
@@ -463,6 +496,7 @@ export function buildHighestRiskHolders(holders: PrivilegedHolder[], limit = 4):
         lastReviewedAt: row.lastReviewedAt,
         riskScore: row.riskScore,
         riskLevel: row.riskLevel,
+        identifier: row.identifier,
         topFactor: row.topFactor,
       })
       continue
@@ -491,7 +525,7 @@ export function buildPrivilegedRoles(
       privilege_tier: 0,
       is_privileged: true,
       is_built_in: true,
-      description: null,
+      description: tier0RoleDescription(name),
     })
   }
 
@@ -526,7 +560,7 @@ export function buildPrivilegedRoles(
         privilegeTier: row.privilege_tier,
         isPrivileged: row.is_privileged,
         isBuiltIn: row.is_built_in,
-        description: row.description,
+        description: row.description ?? (row.privilege_tier === 0 ? tier0RoleDescription(row.display_name) : null),
         holderCount: holderIds.size,
         standingCount: standingByRole.get(row.id) ?? 0,
         eligibleCount: eligibleByRole.get(row.id) ?? 0,

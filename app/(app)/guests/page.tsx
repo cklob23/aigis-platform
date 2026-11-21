@@ -10,7 +10,6 @@ import { GuestFilters } from '@/components/guests/guest-filters'
 import { GuestTable } from '@/components/guests/guest-table'
 import { CauseGroups } from '@/components/guests/cause-groups'
 import { Pagination } from '@/components/layout/pagination'
-import { formatNumber } from '@/lib/format'
 import { guestsEmptyCopy } from '@/lib/guests-empty-copy'
 import { privilegedPagesEnabled } from '@/lib/privileged/capability'
 import { getIdentityPrivilegeTiers } from '@/lib/data/privileged'
@@ -56,7 +55,7 @@ export default async function GuestsPage({ searchParams }: { searchParams: Promi
 
   return (
     <>
-      <PageHeader title="External identities" description={`${formatNumber(total)} external identities match. Scores combine inactivity, sponsorship, domain trust, and sensitive-resource exposure.`} />
+      <PageHeader title="External identities" description="All external identities in this tenant." />
       <Suspense>
         <GuestFilters domains={domains} />
       </Suspense>

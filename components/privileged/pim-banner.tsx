@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { AlertTriangle } from 'lucide-react'
+import { Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   ENTRA_P2_DOCS,
@@ -13,11 +13,11 @@ import type { PrivilegedPimStatus } from '@/lib/types'
 export function PimBanner({ pim, recheck }: { pim: PrivilegedPimStatus; recheck?: ReactNode }) {
   if (pim === 'available') return null
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-warning/40 bg-warning/5 p-4 text-sm" role="status">
+    <div className="flex flex-col gap-3 rounded-lg border border-[#cfdcf3] bg-[#f3f7fe] p-4 text-sm text-[#24395e] dark:border-primary/40 dark:bg-primary/10 dark:text-foreground" role="status">
       <div className="flex items-start gap-3">
-        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
+        <Info className="mt-0.5 size-4 shrink-0 text-[#2f5fc4] dark:text-primary" />
         <div className="flex flex-col gap-1">
-          <span className="font-medium">{PIM_BANNER_TITLE}</span>
+          <span className="font-medium text-foreground">{PIM_BANNER_TITLE}</span>
           <span className="text-muted-foreground">{PIM_BANNER_BODY}</span>
         </div>
       </div>

@@ -9,7 +9,7 @@ export function RemediationPlaceholder() {
         <EmptyMedia variant="icon">
           <Wrench />
         </EmptyMedia>
-        <EmptyTitle>Remediation coming later</EmptyTitle>
+        <EmptyTitle>Remediation is coming soon</EmptyTitle>
         <EmptyDescription>{REMEDIATION_PLACEHOLDER}</EmptyDescription>
       </EmptyHeader>
     </Empty>
