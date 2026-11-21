@@ -2,7 +2,12 @@ import Link from 'next/link'
 import { ArrowRight, AlertTriangle, ShieldAlert, TrendingUp } from 'lucide-react'
 import { requireOnboarded } from '@/lib/auth/current'
 import { getDashboardData } from '@/lib/data/dashboard'
-import { can } from '@/lib/auth/rbac'
+import { getPrivilegedSummary } from '@/lib/data/privileged'
+import { can, canViewPrivilegedDetail } from '@/lib/auth/rbac'
+import { privilegedPagesEnabled } from '@/lib/privileged/capability'
+import { DASHBOARD_SUBTITLE_GUESTS_ONLY, DASHBOARD_SUBTITLE_PRIVILEGED } from '@/lib/privileged/copy'
+import { PrivilegedDashboardCard } from '@/components/privileged/dashboard-card'
+import { redactPrivilegedAlert } from '@/lib/alerts/redact'
 import { PageHeader } from '@/components/layout/page-header'
 import { StatCard } from '@/components/dashboard/stat-card'
 import { TrendChart } from '@/components/dashboard/trend-chart'
@@ -20,7 +25,12 @@ export const metadata = { title: 'Dashboard' }
 
 export default async function DashboardPage() {
   const { session, tenant } = await requireOnboarded()
-  const d = await getDashboardData(tenant.id)
+  const privilegedEnabled = privilegedPagesEnabled(tenant.settings)
+  const [d, privileged] = await Promise.all([
+    getDashboardData(tenant.id),
+    privilegedEnabled ? getPrivilegedSummary(tenant.id, tenant.settings) : Promise.resolve(null),
+  ])
+  const alerts = d.alerts.map((a) => redactPrivilegedAlert(a, canViewPrivilegedDetail(session.role)))
   const cur = d.current
   const prev = d.weekAgo
   const delta = (k: string) => (cur && prev ? (Number(cur[k]) || 0) - (Number(prev[k]) || 0) : null)
@@ -52,7 +62,7 @@ export default async function DashboardPage() {
         eyebrow={tenant.display_name}
         title="External access posture"
         description={`${formatNumber(cur.total_guests)} external identities across ${cur.domains} external domains. ${exposurePct}% are critical or high risk.`}
-        subtitle="Governing external identities today. Privileged, non-human, and AI agent types will use the same reviews and audit model."
+        subtitle={privilegedEnabled ? DASHBOARD_SUBTITLE_PRIVILEGED : DASHBOARD_SUBTITLE_GUESTS_ONLY}
         actions={
           <>
             <Button variant="outline" nativeButton={false} render={<Link href="/reports" />}>
@@ -62,6 +72,12 @@ export default async function DashboardPage() {
           </>
         }
       />
+
+      {privileged && (
+        <section aria-label="Privileged access">
+          <PrivilegedDashboardCard summary={privileged} />
+        </section>
+      )}
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-6" aria-label="Key metrics">
         <StatCard label="External identities" value={cur.total_guests} delta={delta('total_guests')} href="/guests" hint="active in directory" />
@@ -105,14 +121,14 @@ export default async function DashboardPage() {
           <CardHeader className="flex-row items-start justify-between gap-2">
             <div className="flex flex-col gap-1">
               <CardTitle>Open alerts</CardTitle>
-              <CardDescription>{d.alerts.length ? 'Needs attention' : 'No open alerts'}</CardDescription>
+              <CardDescription>{alerts.length ? 'Needs attention' : 'No open alerts'}</CardDescription>
             </div>
             <Button variant="ghost" size="sm" nativeButton={false} render={<Link href="/alerts" />}>
               View all <ArrowRight data-icon="inline-end" />
             </Button>
           </CardHeader>
           <CardContent className="flex flex-col divide-y">
-            {d.alerts.length === 0 && (
+            {alerts.length === 0 && (
               <p className="pb-2.5 text-muted-foreground text-xs leading-relaxed">
                 Alerts fire on <span className="text-foreground">change</span> between scans, not on standing risk.
                 {cur.critical > 0 ? (
@@ -129,7 +145,7 @@ export default async function DashboardPage() {
                 )}
               </p>
             )}
-            {d.alerts.map((a) => (
+            {alerts.map((a) => (
               <div key={a.id} className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
                 <SeverityDot severity={a.severity} className="mt-1.5" />
                 <div className="flex min-w-0 flex-col">

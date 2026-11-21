@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { PRIVILEGED_REVIEW_DAYS, privilegedReviewPastCadence } from '@/lib/risk/privileged'
 import {
   dormantAdminCandidates,
   guestWithRoleCandidates,
@@ -62,6 +63,16 @@ describe('privileged alert candidates', () => {
     expect(privilegedNotReviewedCandidates([identity({ last_reviewed_at: '2026-08-22T00:00:00.000Z' })], NOW)).toHaveLength(1)
     expect(privilegedNotReviewedCandidates([identity({ last_reviewed_at: '2026-08-24T00:00:00.000Z' })], NOW)).toHaveLength(0)
     expect(privilegedNotReviewedCandidates([identity()], NOW)).toHaveLength(0)
+    const day = 86_400_000
+    const at90 = new Date(NOW - PRIVILEGED_REVIEW_DAYS * day).toISOString()
+    const at90plus = new Date(NOW - PRIVILEGED_REVIEW_DAYS * day - 1).toISOString()
+    const at91 = new Date(NOW - (PRIVILEGED_REVIEW_DAYS + 1) * day).toISOString()
+    expect(privilegedNotReviewedCandidates([identity({ last_reviewed_at: at90 })], NOW)).toHaveLength(0)
+    expect(privilegedNotReviewedCandidates([identity({ last_reviewed_at: at90plus })], NOW)).toHaveLength(0)
+    expect(privilegedNotReviewedCandidates([identity({ last_reviewed_at: at91 })], NOW)).toHaveLength(1)
+    expect(privilegedReviewPastCadence(at90, NOW)).toBe(false)
+    expect(privilegedReviewPastCadence(at90plus, NOW)).toBe(false)
+    expect(privilegedReviewPastCadence(at91, NOW)).toBe(true)
   })
 
   it('fires privileged_change_not_seen for standing T0 when P2 is available', () => {

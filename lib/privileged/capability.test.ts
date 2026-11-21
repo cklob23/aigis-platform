@@ -13,6 +13,8 @@ import {
   authMethodsReadsEnabled,
   pimDirectoryReadsEnabled,
   pimStatusFromProbe,
+  privilegedAlertsEnabled,
+  privilegedPagesEnabled,
   privilegedStageEnabled,
   shouldProbePrivilegedCapability,
   type PrivilegedDeps,
@@ -63,6 +65,29 @@ describe('privilegedStageEnabled', () => {
     expect(privilegedStageEnabled({ privileged: { enabled: true } })).toBe(false)
     expect(privilegedStageEnabled({ privileged: { enabled: true, capability: null } })).toBe(false)
     expect(privilegedStageEnabled({ privileged: { enabled: true, capability: { pim: 'available' } } })).toBe(false)
+  })
+})
+
+describe('privilegedPagesEnabled vs privilegedAlertsEnabled', () => {
+  it('turns pages on from the enabled flag alone, and keeps alerts on the stage check', () => {
+    const consent = {
+      privileged: {
+        enabled: true,
+        capability: {
+          pim: 'needs_consent',
+          pim_groups: 'needs_consent',
+          sign_in_activity: false,
+          auth_methods: false,
+          license_hint: 'none',
+          checked_at: '2026-11-19T12:00:00.000Z',
+          scan_job_id: null,
+        },
+      },
+    }
+    expect(privilegedPagesEnabled(consent)).toBe(true)
+    expect(privilegedAlertsEnabled(consent)).toBe(false)
+    expect(privilegedAlertsEnabled(consent)).toBe(privilegedStageEnabled(consent))
+    expect(privilegedPagesEnabled({ privileged: { enabled: false } })).toBe(false)
   })
 })
 

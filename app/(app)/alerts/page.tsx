@@ -1,7 +1,8 @@
 import Link from 'next/link'
 import { ArrowRight, BellOff, CheckCheck, History } from 'lucide-react'
 import { requireOnboarded } from '@/lib/auth/current'
-import { can } from '@/lib/auth/rbac'
+import { can, canViewPrivilegedDetail } from '@/lib/auth/rbac'
+import { redactPrivilegedAlert, REDACTED_PRIVILEGED_ALERT_TITLE } from '@/lib/alerts/redact'
 import { listAlerts } from '@/lib/data/governance'
 import { listAlertRules } from '@/lib/data/alerts'
 import { getSidebarCounts } from '@/lib/data/dashboard'
@@ -22,7 +23,8 @@ export const metadata = { title: 'Alerts' }
 export default async function AlertsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const { session, tenant } = await requireOnboarded()
   const { tab } = await searchParams
-  const [alerts, rules, { critical }] = await Promise.all([listAlerts(tenant.id), listAlertRules(tenant.id), getSidebarCounts(tenant.id)])
+  const [rawAlerts, rules, { critical }] = await Promise.all([listAlerts(tenant.id), listAlertRules(tenant.id), getSidebarCounts(tenant.id)])
+  const alerts = rawAlerts.map((a) => redactPrivilegedAlert(a, canViewPrivilegedDetail(session.role)))
   const open = alerts.filter((a) => a.status === 'open')
   const acknowledged = alerts.filter((a) => a.status === 'acknowledged')
   const resolved = alerts.filter((a) => a.status !== 'open' && a.status !== 'acknowledged')
@@ -31,7 +33,8 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
   const initialTab: AlertTab = tab === 'acknowledged' || tab === 'resolved' ? tab : 'open'
 
   const Row = ({ a }: { a: (typeof alerts)[number] }) => {
-    const guest = a.guest as unknown as { id: string; display_name: string | null; email: string | null; domain: string | null } | null
+    const redacted = a.title === REDACTED_PRIVILEGED_ALERT_TITLE
+    const guest = redacted ? null : (a.guest as unknown as { id: string; display_name: string | null; email: string | null; domain: string | null } | null)
     const resource = a.resource as unknown as { id: string; display_name: string } | null
     return (
       <li className={cn('flex flex-col gap-2 p-4 md:flex-row md:items-center', a.status !== 'open' && 'opacity-70')}>

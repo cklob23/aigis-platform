@@ -20,12 +20,20 @@ test('sidebar footnote under External identities is exact approved copy', () => 
 test('dashboard populated subtitle is exact approved copy under the existing description', () => {
   const dashboard = read('app/(app)/dashboard/page.tsx')
   const header = read('components/layout/page-header.tsx')
+  const copy = read('lib/privileged/copy.ts')
   assert.match(dashboard, /external identities across/)
   assert.match(
-    dashboard,
-    /subtitle="Governing external identities today\. Privileged, non-human, and AI agent types will use the same reviews and audit model\."/,
+    copy,
+    /Governing external identities today\. Privileged, non-human, and AI agent types will use the same reviews and audit model\./,
   )
+  assert.match(
+    copy,
+    /Governing external and privileged access today\. Non-human and AI agent types will use the same reviews and audit model\./,
+  )
+  assert.match(dashboard, /DASHBOARD_SUBTITLE_PRIVILEGED/)
+  assert.match(dashboard, /DASHBOARD_SUBTITLE_GUESTS_ONLY/)
   assert.match(header, /subtitle &&/)
   assert.doesNotMatch(dashboard, /—/)
   assert.doesNotMatch(header, /—/)
+  assert.doesNotMatch(copy, /—/)
 })

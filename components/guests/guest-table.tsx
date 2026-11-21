@@ -15,6 +15,7 @@ import { relativeDays, formatDate } from '@/lib/format'
 import type { Guest } from '@/lib/types'
 import { RECOMMENDATION_LABELS as ACTION_LABEL } from '@/lib/risk/recommendation'
 import { cn } from '@/lib/utils'
+import { TierBadge } from '@/components/privileged/tier-badge'
 
 export function GuestTable({
   guests,
@@ -24,6 +25,7 @@ export function GuestTable({
   scopeCounts,
   defaultReviewerEmails = [],
   emptyMessage = 'No identities match these filters.',
+  privilegeTiers = {},
 }: {
   guests: Guest[]
   canReview: boolean
@@ -33,6 +35,7 @@ export function GuestTable({
   scopeCounts?: { all_external: number; high_critical: number }
   defaultReviewerEmails?: string[]
   emptyMessage?: string
+  privilegeTiers?: Record<string, 0 | 1 | 2>
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [reviewOpen, setReviewOpen] = useState(false)
@@ -119,6 +122,7 @@ export function GuestTable({
                           pending
                         </Badge>
                       )}
+                      <TierBadge tier={privilegeTiers[g.identity_id] ?? null} />
                     </span>
                     <span className="truncate font-mono text-muted-foreground text-xs" title={g.email ?? undefined}>
                       {g.email}

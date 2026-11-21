@@ -60,6 +60,16 @@ export function privilegedStageEnabled(settings: Record<string, unknown> | null 
   return parsed.enabled === true && parsed.capability != null && parsed.capability.pim !== 'needs_consent'
 }
 
+/** Pages, nav, dashboard card, subtitle, and guest tier badge. Strict enabled flag only. */
+export function privilegedPagesEnabled(settings: Record<string, unknown> | null | undefined): boolean {
+  return parsePrivilegedSettings(settings).enabled === true
+}
+
+/** Alert UI group, saveAlertRule, and evaluator. Same check as the privileged scan stage. */
+export function privilegedAlertsEnabled(settings: Record<string, unknown> | null | undefined): boolean {
+  return privilegedStageEnabled(settings)
+}
+
 /** Directory PIM eligibility GETs. needs_consent, missing capability, and non-available pim stay off. */
 export function pimDirectoryReadsEnabled(settings: Record<string, unknown> | null | undefined): boolean {
   const parsed = parsePrivilegedSettings(settings)

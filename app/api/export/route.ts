@@ -1,6 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { getSession, getTenant, withLiveRole } from '@/lib/auth/current'
-import { can } from '@/lib/auth/rbac'
+import { can, canExportPrivileged } from '@/lib/auth/rbac'
+import { privilegedPagesEnabled } from '@/lib/privileged/capability'
+import { getPrivilegedDetail } from '@/lib/data/privileged'
+import { ASSIGNMENT_STATE_LABEL, IDENTITY_CLASS_LABEL, TIER_LABEL } from '@/lib/privileged/view'
 import { listGuests, type GuestFilters } from '@/lib/data/guests'
 import { listDomains } from '@/lib/data/domains'
 import { listOrganizations } from '@/lib/data/organizations'
@@ -67,6 +70,25 @@ export async function GET(req: NextRequest) {
     body = csv([
       ['Resource', 'Type', 'Sensitive', 'Category', 'Internal members', 'External members', 'Visibility', 'URL'],
       ...resources.map((r) => [r.display_name, r.resource_type, r.is_sensitive, r.sensitivity_category, r.internal_member_count, r.external_member_count, r.visibility, r.web_url]),
+    ])
+  } else if (type === 'privileged') {
+    if (!privilegedPagesEnabled(tenant.settings)) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+    if (!canExportPrivileged(session.role)) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+    const detail = await getPrivilegedDetail(tenant.id, session.role, tenant.settings)
+    body = csv([
+      ['Display name', 'Email', 'Class', 'Tier', 'Roles', 'States', 'Last activity', 'Last reviewed', 'Risk score', 'Risk level'],
+      ...detail.holders.map((h) => [
+        h.displayName,
+        h.email,
+        IDENTITY_CLASS_LABEL[h.identityClass],
+        h.privilegeTier != null ? TIER_LABEL[h.privilegeTier] : '',
+        h.roles.map((r) => r.roleName).join('; '),
+        h.assignmentStates.map((s) => ASSIGNMENT_STATE_LABEL[s]).join('; '),
+        h.lastActivityAt,
+        h.lastReviewedAt,
+        h.riskScore,
+        h.riskLevel,
+      ]),
     ])
   } else if (type === 'audit') {
     if (!can(session.role, 'audit.view')) return NextResponse.json({ error: 'forbidden' }, { status: 403 })

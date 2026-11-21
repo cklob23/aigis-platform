@@ -4,6 +4,7 @@ import { AppTopbar } from '@/components/layout/app-topbar'
 import { requireOnboarded } from '@/lib/auth/current'
 import { can } from '@/lib/auth/rbac'
 import { getSidebarCounts } from '@/lib/data/dashboard'
+import { privilegedPagesEnabled } from '@/lib/privileged/capability'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { session, tenant } = await requireOnboarded()
@@ -15,6 +16,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         tenant={{ displayName: tenant.display_name, primaryDomain: tenant.primary_domain, connectionStatus: tenant.connection_status }}
         counts={counts}
         canViewAudit={can(session.role, 'audit.view')}
+        privilegedEnabled={privilegedPagesEnabled(tenant.settings)}
       />
       <SidebarInset className="min-w-0">
         <AppTopbar demo={session.demo} lastScanAt={tenant.last_scan_at} connectionStatus={tenant.connection_status} />

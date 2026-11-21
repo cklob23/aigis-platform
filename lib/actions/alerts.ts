@@ -8,6 +8,7 @@ import { evaluateAlertRules } from '@/lib/alerts/evaluate'
 import { loadMailTenant, normalizeEmails, publicOrigin, sendMail } from '@/lib/email/mailer'
 import { testMessage } from '@/lib/email/templates'
 import { ALERT_TRIGGER_LABELS, type AlertRuleConditions, type AlertTriggerType, type RiskLevel } from '@/lib/types'
+import { privilegedAlertRuleBlocked } from '@/lib/alerts/privileged-gate'
 
 type ActionResult = { ok: true; message?: string } | { ok: false; error: string }
 
@@ -34,6 +35,8 @@ export async function saveAlertRule(input: AlertRuleInput): Promise<ActionResult
     const name = input.name.trim()
     if (!name) return { ok: false, error: 'Name is required.' }
     if (!ALERT_TRIGGER_LABELS[input.triggerType]) return { ok: false, error: 'Unknown trigger.' }
+    const blocked = privilegedAlertRuleBlocked(input.triggerType, tenant.settings)
+    if (blocked) return { ok: false, error: blocked }
     const recipients = normalizeEmails(input.recipients)
     if (input.notifyEmail && recipients.length === 0) return { ok: false, error: 'Add at least one recipient or turn off email.' }
 

@@ -45,7 +45,7 @@ function points(result: ReturnType<typeof scorePrivilegedOverlay>, key: string) 
 
 describe('scorePrivilegedOverlay', () => {
   it('returns nothing when isPrivileged is false', () => {
-    expect(scorePrivilegedOverlay(ctx({ isPrivileged: false }), undefined, NOW)).toEqual({
+    expect(scorePrivilegedOverlay(ctx({ isPrivileged: false }), NOW)).toEqual({
       factors: [],
       score: 0,
       recommendedAction: 'keep',
@@ -77,14 +77,14 @@ describe('scorePrivilegedOverlay', () => {
   })
 
   it('adds tier and permanent factors for standing T0 with P2', () => {
-    const result = scorePrivilegedOverlay(ctx(), undefined, NOW)
+    const result = scorePrivilegedOverlay(ctx(), NOW)
     expect(points(result, 'tier0_role')).toBe(25)
     expect(points(result, 'permanent_tier0')).toBe(30)
     expect(points(result, 'strong_auth_ok')).toBe(0)
   })
 
   it('skips permanent_* and eligible_not_activated without P2', () => {
-    const result = scorePrivilegedOverlay(ctx({ hasP2: false }), undefined, NOW)
+    const result = scorePrivilegedOverlay(ctx({ hasP2: false }), NOW)
     expect(keys(result)).not.toContain('permanent_tier0')
     expect(keys(result)).not.toContain('permanent_tier1')
     expect(keys(result)).not.toContain('eligible_not_activated')
@@ -93,7 +93,6 @@ describe('scorePrivilegedOverlay', () => {
   it('skips dormant_admin without P1', () => {
     const result = scorePrivilegedOverlay(
       ctx({ hasP1: false, lastActivityAt: '2026-01-01T00:00:00.000Z' }),
-      undefined,
       NOW,
     )
     expect(keys(result)).not.toContain('dormant_admin')
@@ -101,23 +100,23 @@ describe('scorePrivilegedOverlay', () => {
 
   it('scores dormant_admin at 90 days when P1 is present', () => {
     const last = new Date(NOW - DORMANT_ADMIN_DAYS * 86_400_000).toISOString()
-    const result = scorePrivilegedOverlay(ctx({ lastActivityAt: last, dedicatedAdmin: true }), undefined, NOW)
+    const result = scorePrivilegedOverlay(ctx({ lastActivityAt: last, dedicatedAdmin: true }), NOW)
     expect(points(result, 'dormant_admin')).toBe(20)
   })
 
   it('scores guest_with_role and sp_with_role by class', () => {
-    expect(points(scorePrivilegedOverlay(ctx({ identityClass: 'external', accountKind: 'guest' }), undefined, NOW), 'guest_with_role')).toBe(25)
-    expect(points(scorePrivilegedOverlay(ctx({ identityClass: 'non_human', accountKind: 'sp' }), undefined, NOW), 'sp_with_role')).toBe(15)
+    expect(points(scorePrivilegedOverlay(ctx({ identityClass: 'external', accountKind: 'guest' }), NOW), 'guest_with_role')).toBe(25)
+    expect(points(scorePrivilegedOverlay(ctx({ identityClass: 'non_human', accountKind: 'sp' }), NOW), 'sp_with_role')).toBe(15)
   })
 
   it('skips auth factors when methods are unknown', () => {
-    const result = scorePrivilegedOverlay(ctx({ authMethodsKnown: false, authMethods: null }), undefined, NOW)
+    const result = scorePrivilegedOverlay(ctx({ authMethodsKnown: false, authMethods: null }), NOW)
     expect(keys(result)).not.toContain('no_strong_auth')
     expect(keys(result)).not.toContain('strong_auth_ok')
   })
 
   it('scores no_strong_auth when methods are known empty', () => {
-    const result = scorePrivilegedOverlay(ctx({ authMethods: [], authMethodsKnown: true }), undefined, NOW)
+    const result = scorePrivilegedOverlay(ctx({ authMethods: [], authMethodsKnown: true }), NOW)
     expect(points(result, 'no_strong_auth')).toBe(20)
   })
 
@@ -149,7 +148,6 @@ describe('scorePrivilegedOverlay', () => {
           },
         ],
       }),
-      undefined,
       NOW,
     )
     expect(points(result, 'tier1_role')).toBe(12)
@@ -168,11 +166,15 @@ describe('scorePrivilegedOverlay', () => {
     const day = 86_400_000
     const at91 = new Date(NOW - (PRIVILEGED_REVIEW_DAYS + 1) * day).toISOString()
     const at89 = new Date(NOW - (PRIVILEGED_REVIEW_DAYS - 1) * day).toISOString()
-    const overdue = scorePrivilegedOverlay(ctx({ lastReviewedAt: at91 }), { reviewDays: 365 }, NOW)
+    const overdue = scorePrivilegedOverlay(ctx({ lastReviewedAt: at91 }), NOW)
     expect(points(overdue, 'privileged_review_overdue')).toBe(10)
     expect(keys(overdue)).not.toContain('not_reviewed_flag')
-    const recent = scorePrivilegedOverlay(ctx({ lastReviewedAt: at89 }), { reviewDays: 7 }, NOW)
+    const recent = scorePrivilegedOverlay(ctx({ lastReviewedAt: at89 }), NOW)
     expect(keys(recent)).not.toContain('privileged_review_overdue')
+    const at90 = new Date(NOW - PRIVILEGED_REVIEW_DAYS * day).toISOString()
+    const at90plus = new Date(NOW - PRIVILEGED_REVIEW_DAYS * day - 1).toISOString()
+    expect(keys(scorePrivilegedOverlay(ctx({ lastReviewedAt: at90 }), NOW))).not.toContain('privileged_review_overdue')
+    expect(keys(scorePrivilegedOverlay(ctx({ lastReviewedAt: at90plus }), NOW))).not.toContain('privileged_review_overdue')
   })
 
   it('caps overlay at 100', () => {
@@ -194,7 +196,6 @@ describe('scorePrivilegedOverlay', () => {
           { assignmentType: 'eligible', memberType: 'direct', privilegeTier: 2 },
         ],
       }),
-      undefined,
       NOW,
     )
     expect(result.score).toBe(100)

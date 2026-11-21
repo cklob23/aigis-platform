@@ -10,12 +10,16 @@ import { authStrength, type AuthStrength } from '@/lib/risk/auth-methods'
 
 const DAY = 86_400_000
 
-function daysSince(iso: string | null, now = Date.now()) {
+export function daysSince(iso: string | null, now = Date.now()) {
   if (!iso) return null
   return Math.floor((now - new Date(iso).getTime()) / DAY)
 }
 
-type OverlayPolicy = { reviewDays: number }
+/** True once the last review is more than PRIVILEGED_REVIEW_DAYS old. Null last review is not overdue here. */
+export function privilegedReviewPastCadence(lastReviewedAt: string | null, now = Date.now()) {
+  const age = daysSince(lastReviewedAt, now)
+  return age !== null && age > PRIVILEGED_REVIEW_DAYS
+}
 
 export const GLOBAL_ADMIN_TEMPLATE_ID = TIER_0_TEMPLATE_IDS['Global Administrator']
 
@@ -136,7 +140,6 @@ function isDailyUse(ctx: PrivilegedRiskContext, now: number) {
  */
 export function scorePrivilegedOverlay(
   ctx: PrivilegedRiskContext,
-  policy: OverlayPolicy = { reviewDays: 365 },
   now = Date.now(),
 ): PrivilegedOverlayResult {
   if (!ctx.isPrivileged) return STUB_OVERLAY
@@ -203,7 +206,7 @@ export function scorePrivilegedOverlay(
 
   const reviewAge = daysSince(ctx.lastReviewedAt, now)
   if (reviewAge === null) add(factors, 'not_reviewed_flag', 'Privileged identity never reviewed')
-  else if (reviewAge > PRIVILEGED_REVIEW_DAYS) {
+  else if (privilegedReviewPastCadence(ctx.lastReviewedAt, now)) {
     add(factors, 'privileged_review_overdue', 'Privileged access review overdue', `Last review ${reviewAge} days ago`)
   }
 
