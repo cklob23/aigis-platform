@@ -80,6 +80,7 @@ describe('computeIdentityRisk', () => {
       risk_score: risk.score,
       risk_level: risk.level,
       recommended_action: risk.recommendedAction,
+      risk_factors: risk.factors,
     })
     expect(risk.score).toBeGreaterThan(0)
   })

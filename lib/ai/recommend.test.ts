@@ -45,6 +45,22 @@ describe('explainRecommendation', () => {
     expect(out.body).toContain('not an access change')
     expect(out.citations.map((c) => c.key)).toEqual(['no_sponsor', 'domain_unknown'])
   })
+
+  it('explains a privilege overlay recommendation without changing access', () => {
+    const out = explainRecommendation({
+      recommendedAction: 'review',
+      displayName: 'Adele Admin',
+      factors: [
+        { key: 'privilege_t0', label: 'Tier 0 control-plane role', points: 40, detail: 'T0' },
+        { key: 'standing_privileged', label: 'Standing privileged assignment', points: 16 },
+      ],
+    })
+    expect(out.title).toContain('Review')
+    expect(out.body).toContain('Adele Admin')
+    expect(out.body).toContain('Tier 0 control-plane role (+40')
+    expect(out.body).toContain('not an access change')
+    expect(out.recommendedAction).toBe('review')
+  })
 })
 
 describe('AI module isolation', () => {
@@ -57,5 +73,12 @@ describe('AI module isolation', () => {
       expect(src).not.toMatch(/import\s*\{[^}]*remediateGuest/)
       expect(src).not.toMatch(/GraphClient/)
     }
+  })
+
+  it('keeps privilege overlay recommend-only', () => {
+    const src = readFileSync(path.join(root, 'lib/risk/overlay.ts'), 'utf8')
+    expect(src).not.toMatch(/from ['"]@\/lib\/graph/)
+    expect(src).not.toMatch(/from ['"]@\/lib\/actions\/remediation/)
+    expect(src).not.toMatch(/GraphClient/)
   })
 })

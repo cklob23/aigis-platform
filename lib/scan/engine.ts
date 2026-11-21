@@ -15,6 +15,8 @@ import {
 } from '@/lib/graph/queries'
 import { detectSensitivity } from '@/lib/risk/sensitivity'
 import { computeIdentityRisk, identityRiskPatch, DEFAULT_RISK_POLICY, type RiskPolicyConfig } from '@/lib/risk/engine'
+import { parsePrivilegedSettings, privilegedStageEnabled } from '@/lib/privileged/capability'
+import { planPrivilegedRiskOverlay, type OverlayIdentityRow } from '@/lib/scan/privileged-risk'
 import type { DomainClassification, ExternalDomain, Guest, RelationshipType, Resource, ResourceType } from '@/lib/types'
 import { audit } from '@/lib/audit'
 
@@ -32,7 +34,6 @@ import { classifyExternalIdentity, defaultOrganizationName } from '@/lib/identit
 import { resolveCompany } from '@/lib/identity/company'
 import { planGuestInventory, type IncomingExternalGuest } from '@/lib/identity/ingest'
 import { writeGuestInventory } from '@/lib/identity/write-inventory'
-import { privilegedStageEnabled } from '@/lib/privileged/capability'
 import { runPrivilegedStage } from '@/lib/scan/privileged'
 import { requireIdentityId, withMembershipIds } from '@/lib/identity/governance'
 import { loadGovernanceMaps } from '@/lib/identity/governance-maps'
@@ -47,6 +48,7 @@ import {
   persistMembershipUpserts,
   persistRiskFindings,
   persistRiskScores,
+  type IdentityRiskUpdate,
 } from '@/lib/scan/persist'
 
 function domainOf(user: GraphUser) {
@@ -100,7 +102,7 @@ export async function rescoreTenant(tenantId: string, scanJobId: string | null, 
   const byGuest = membershipsByGuestForRisk(memberships, resourceMap)
 
   const updates: Partial<Guest>[] = []
-  const identityUpdates: { id: string; risk_score: number; risk_level: Guest['risk_level']; recommended_action: Guest['recommended_action'] }[] = []
+  const identityUpdates: IdentityRiskUpdate[] = []
   const scoreRows: Record<string, unknown>[] = []
   const counts = { critical: 0, high: 0, medium: 0, low: 0 }
   for (const g of guests) {
@@ -146,12 +148,90 @@ export async function rescoreTenant(tenantId: string, scanJobId: string | null, 
     (u) =>
       supabase
         .from('identities')
-        .update({ risk_score: u.risk_score, risk_level: u.risk_level, recommended_action: u.recommended_action })
+        .update({
+          risk_score: u.risk_score,
+          risk_level: u.risk_level,
+          recommended_action: u.recommended_action,
+          risk_factors: u.risk_factors,
+        })
         .eq('id', u.id)
         .eq('tenant_id', tenantId),
     identityUpdates,
   )
   await persistRiskScores((rows) => supabase.from('risk_scores').insert(rows), scoreRows)
+
+  const { data: tenantRow } = await supabase.from('tenants').select('settings').eq('id', tenantId).single()
+  const settings = (tenantRow?.settings ?? {}) as Record<string, unknown>
+  const overlayOn = privilegedStageEnabled(settings)
+  const activityKnown = parsePrivilegedSettings(settings).capability?.sign_in_activity === true
+  const internals = await fetchAllById<OverlayIdentityRow>('identities overlay', () =>
+    supabase
+      .from('identities')
+      .select('id,is_privileged,privilege_tier,status,last_activity_at,first_seen_at,risk_score,risk_level,recommended_action')
+      .eq('tenant_id', tenantId)
+      .eq('identity_class', 'human_internal')
+      .is('removed_at', null),
+  )
+  const overlayPlan = overlayOn
+    ? planPrivilegedRiskOverlay({
+        tenantId,
+        scanJobId,
+        identities: internals,
+        accounts: await fetchAllById('identity_accounts overlay', () =>
+          supabase
+            .from('identity_accounts')
+            .select('id,identity_id,enabled,last_activity_at')
+            .eq('tenant_id', tenantId)
+            .is('removed_at', null),
+        ),
+        assignments: await fetchAllById('role_assignments overlay', () =>
+          supabase
+            .from('role_assignments')
+            .select('id,principal_identity_id,directory_role_id,assignment_type')
+            .eq('tenant_id', tenantId)
+            .is('removed_at', null),
+        ),
+        roles: await fetchAllById('directory_roles overlay', () =>
+          supabase.from('directory_roles').select('id,is_privileged').eq('tenant_id', tenantId).is('removed_at', null),
+        ),
+        groupEligibilities: await fetchAllById('group_pim_eligibilities overlay', () =>
+          supabase
+            .from('group_pim_eligibilities')
+            .select('id,principal_identity_id,access_id')
+            .eq('tenant_id', tenantId)
+            .is('removed_at', null),
+        ),
+        policy,
+        activityKnown,
+        overlayOn: true,
+      })
+    : planPrivilegedRiskOverlay({
+        tenantId,
+        scanJobId,
+        identities: internals,
+        accounts: [],
+        assignments: [],
+        roles: [],
+        groupEligibilities: [],
+        policy,
+        activityKnown: false,
+        overlayOn: false,
+      })
+  await persistIdentityRiskUpdates(
+    (u) =>
+      supabase
+        .from('identities')
+        .update({
+          risk_score: u.risk_score,
+          risk_level: u.risk_level,
+          recommended_action: u.recommended_action,
+          risk_factors: u.risk_factors,
+        })
+        .eq('id', u.id)
+        .eq('tenant_id', tenantId),
+    overlayPlan.identityUpdates,
+  )
+  await persistRiskScores((rows) => supabase.from('risk_scores').insert(rows), overlayPlan.scoreRows)
   return counts
 }
 

@@ -29,6 +29,7 @@ export type IdentityRiskUpdate = {
   risk_score: number
   risk_level: string
   recommended_action: string
+  risk_factors: unknown
 }
 
 export async function persistIdentityRiskUpdates(

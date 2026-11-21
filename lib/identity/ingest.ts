@@ -57,7 +57,7 @@ export type InventoriedInternal = {
 
 type IdentityScanRow = Omit<
   ReturnType<typeof hubRowsFromGuest>['identity'],
-  'risk_score' | 'risk_level' | 'recommended_action' | 'review_status' | 'last_reviewed_at' | 'first_seen_at'
+  'risk_score' | 'risk_level' | 'recommended_action' | 'risk_factors' | 'review_status' | 'last_reviewed_at' | 'first_seen_at'
 >
 type AccountScanRow = ReturnType<typeof hubRowsFromGuest>['account'] & {
   last_seen_at: string

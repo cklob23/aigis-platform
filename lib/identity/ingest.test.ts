@@ -54,6 +54,7 @@ describe('planGuestInventory', () => {
     expect(plan.identities[0]).not.toHaveProperty('risk_score')
     expect(plan.identities[0]).not.toHaveProperty('risk_level')
     expect(plan.identities[0]).not.toHaveProperty('recommended_action')
+    expect(plan.identities[0]).not.toHaveProperty('risk_factors')
     expect(plan.identities[0]).not.toHaveProperty('review_status')
     expect(plan.identities[0]).not.toHaveProperty('last_reviewed_at')
     expect(plan.accounts[0].source).toBe('entra')

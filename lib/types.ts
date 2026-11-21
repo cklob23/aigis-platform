@@ -143,6 +143,7 @@ export type Identity = {
   risk_score: number
   risk_level: RiskLevel
   recommended_action: RecommendedAction
+  risk_factors: RiskFactor[]
   review_status: ReviewStatus
   last_reviewed_at: string | null
   owner_identity_id: string | null

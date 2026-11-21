@@ -28,8 +28,8 @@ describe('persistIdentityRiskUpdates', () => {
     )
     await expect(
       persistIdentityRiskUpdates(updateOne, [
-        { id: 'id-1', risk_score: 1, risk_level: 'low', recommended_action: 'keep' },
-        { id: 'id-2', risk_score: 90, risk_level: 'critical', recommended_action: 'remove' },
+        { id: 'id-1', risk_score: 1, risk_level: 'low', recommended_action: 'keep', risk_factors: [] },
+        { id: 'id-2', risk_score: 90, risk_level: 'critical', recommended_action: 'remove', risk_factors: [] },
       ]),
     ).rejects.toThrow('identities risk update id-2: row locked')
   })

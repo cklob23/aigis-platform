@@ -45,7 +45,7 @@ export type IdentityRiskResult = {
 
 const STUB_RESULT: IdentityRiskResult = { score: 0, level: 'low', factors: [], recommendedAction: 'keep' }
 
-/** Guest factors. Other classes are reserved stubs (score 0) until their scanners exist. */
+/** Guest factors. Other classes are reserved stubs (score 0) until their scanners exist. Privilege overlay is a flag-gated add-on in lib/risk/overlay.ts, not a class factor set. */
 export const CLASS_FACTOR_SETS: Record<IdentityClass, 'external' | 'stub'> = {
   external: 'external',
   human_internal: 'stub',
@@ -57,6 +57,7 @@ export const CLASS_FACTOR_SETS: Record<IdentityClass, 'external' | 'stub'> = {
 /**
  * Shared identity risk. External uses the current guest factor set bit-identical.
  * Stub classes return score 0 / keep. Does not write Graph or remediate.
+ * Privileged overlay is applied by rescoreTenant when the module flag is on.
  */
 export function computeIdentityRisk(
   identityClass: IdentityClass,
@@ -68,12 +69,13 @@ export function computeIdentityRisk(
   return scoreExternal(input, policy, now)
 }
 
-/** Hub columns mirrored from a score. Guest rows also keep risk_factors. */
+/** Hub columns mirrored from a score, including denormalized factors (0011). */
 export function identityRiskPatch(risk: IdentityRiskResult) {
   return {
     risk_score: risk.score,
     risk_level: risk.level,
     recommended_action: risk.recommendedAction,
+    risk_factors: risk.factors,
   }
 }
 

@@ -3,10 +3,21 @@
 --
 -- Not part of the supabase migration chain. Owner-run only. Single
 -- transaction: a failure leaves the catalog as it was.
+-- If 0011 objects exist, roll back 0011 first.
 -- After this file: run supabase/sql/0010_precheck.sql to confirm the
 -- post-0009 shape is back.
 
 BEGIN;
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'identities' and column_name = 'risk_factors'
+  ) then
+    raise exception '0010 rollback failed: roll back 0011 first (identities.risk_factors exists)';
+  end if;
+end $$;
 
 drop table if exists group_pim_eligibilities;
 

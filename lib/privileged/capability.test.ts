@@ -298,4 +298,18 @@ describe('privileged module isolation', () => {
     expect(stage).toMatch(/groupPimOn \? await fetchGroupEligibilitySchedules/)
     expect(engine).not.toMatch(/planPrivilegedInventory/)
   })
+
+  it('flag-gates the privilege risk overlay and pages overlay selects', () => {
+    const engine = readFileSync(path.join(root, 'lib/scan/engine.ts'), 'utf8')
+    const overlay = readFileSync(path.join(root, 'lib/risk/overlay.ts'), 'utf8')
+    const plan = readFileSync(path.join(root, 'lib/scan/privileged-risk.ts'), 'utf8')
+    expect(engine).toMatch(/planPrivilegedRiskOverlay/)
+    expect(engine).toMatch(/privilegedStageEnabled\(settings\)/)
+    expect(overlay).not.toMatch(/from ['"]@\/lib\/graph/)
+    expect(overlay).not.toMatch(/\b(post|patch|delete)\s*\(/i)
+    expect(overlay).toMatch(/recommendedAction = 'disable'/)
+    expect(overlay).not.toMatch(/recommendedAction = 'remove'/)
+    expect(plan).not.toMatch(/from ['"]@\/lib\/graph/)
+    expect(plan).toMatch(/overlayOn/)
+  })
 })
