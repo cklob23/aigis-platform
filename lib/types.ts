@@ -401,11 +401,11 @@ export const ALERT_TRIGGER_LABELS: Record<AlertTriggerType, { label: string; des
   inactive_identity: { label: 'Inactive identity', description: 'No sign-in for more than a chosen number of days while access remains.' },
   review_overdue: { label: 'Access review overdue', description: 'An active review passed its due date with pending decisions.' },
   scan_failed: { label: 'Scan failed', description: 'A scheduled or manual scan ended with an error.' },
-  new_tier0_assignment: { label: 'New Tier 0 assignment', description: 'A Tier 0 directory role was assigned to an identity since the last scan.' },
-  guest_with_role: { label: 'Guest with a directory role', description: 'An external identity holds a privileged directory role.' },
-  dormant_admin: { label: 'Dormant privileged identity', description: 'A privileged identity has not signed in for 90 days or more.' },
-  privileged_not_reviewed: { label: 'Privileged identity not reviewed', description: 'A privileged identity has never been reviewed, or the last review is overdue.' },
-  privileged_change_not_seen: { label: 'Privileged change not seen', description: 'A standing privileged assignment is still in place after AIGIS recommended converting it to eligible.' },
+  new_tier0_assignment: { label: 'New Tier 0 role assignment', description: 'Someone was given a Tier 0 role since the last scan.' },
+  guest_with_role: { label: 'External identity with an admin role', description: 'An external identity holds a privileged directory role (any tier).' },
+  dormant_admin: { label: 'Dormant privileged account', description: "Holds a privileged role and hasn't signed in for 90 days." },
+  privileged_not_reviewed: { label: 'Privileged access overdue for review', description: 'Not reviewed in the last 365 days. Change this under Settings, Review every (days).' },
+  privileged_change_not_seen: { label: 'Approved change not seen on scan', description: "A change marked as made in Microsoft wasn't detected on the next scan." },
 }
 
 export type AlertRuleConditions = {
