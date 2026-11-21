@@ -4,6 +4,7 @@ import {
   DORMANT_ADMIN_DAYS,
   GLOBAL_ADMIN_TEMPLATE_ID,
   OVERLAY_POINTS,
+  PRIVILEGED_REVIEW_DAYS,
   overlayRecommendedAction,
   recommendAssignmentChange,
   scorePrivilegedOverlay,
@@ -163,14 +164,15 @@ describe('scorePrivilegedOverlay', () => {
     expect(result.score).toBeLessThanOrEqual(100)
   })
 
-  it('scores privileged_review_overdue when last review is older than policy', () => {
-    const result = scorePrivilegedOverlay(
-      ctx({ lastReviewedAt: '2024-01-01T00:00:00.000Z' }),
-      { reviewDays: 365 },
-      NOW,
-    )
-    expect(points(result, 'privileged_review_overdue')).toBe(10)
-    expect(keys(result)).not.toContain('not_reviewed_flag')
+  it('scores privileged_review_overdue on a fixed 90-day cadence, not guest reviewDays', () => {
+    const day = 86_400_000
+    const at91 = new Date(NOW - (PRIVILEGED_REVIEW_DAYS + 1) * day).toISOString()
+    const at89 = new Date(NOW - (PRIVILEGED_REVIEW_DAYS - 1) * day).toISOString()
+    const overdue = scorePrivilegedOverlay(ctx({ lastReviewedAt: at91 }), { reviewDays: 365 }, NOW)
+    expect(points(overdue, 'privileged_review_overdue')).toBe(10)
+    expect(keys(overdue)).not.toContain('not_reviewed_flag')
+    const recent = scorePrivilegedOverlay(ctx({ lastReviewedAt: at89 }), { reviewDays: 7 }, NOW)
+    expect(keys(recent)).not.toContain('privileged_review_overdue')
   })
 
   it('caps overlay at 100', () => {

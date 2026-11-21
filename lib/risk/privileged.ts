@@ -203,7 +203,7 @@ export function scorePrivilegedOverlay(
 
   const reviewAge = daysSince(ctx.lastReviewedAt, now)
   if (reviewAge === null) add(factors, 'not_reviewed_flag', 'Privileged identity never reviewed')
-  else if (reviewAge > policy.reviewDays) {
+  else if (reviewAge > PRIVILEGED_REVIEW_DAYS) {
     add(factors, 'privileged_review_overdue', 'Privileged access review overdue', `Last review ${reviewAge} days ago`)
   }
 
