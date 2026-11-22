@@ -5,9 +5,8 @@ import { canViewPrivilegedDetail } from '@/lib/auth/rbac'
 import { aiExplainEnabled } from '@/lib/ai/recommend'
 import { privilegedPagesEnabled } from '@/lib/privileged/capability'
 import { getPrivilegedIdentity } from '@/lib/data/privileged'
-import { PageHeader } from '@/components/layout/page-header'
 import { IdentityProfile } from '@/components/privileged/identity-profile'
-import { PRIVILEGED_DETAIL_DENIED } from '@/lib/privileged/copy'
+import { PrivilegedDetailDenied } from '@/components/privileged/detail-denied'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -31,7 +30,7 @@ export default async function PrivilegedIdentityPage({ params }: Params) {
   const { session, tenant } = await requireOnboarded()
   if (!privilegedPagesEnabled(tenant.settings)) notFound()
   if (!canViewPrivilegedDetail(session.role)) {
-    return <PageHeader title="Privileged identity" description={PRIVILEGED_DETAIL_DENIED} />
+    return <PrivilegedDetailDenied />
   }
   const profile = await getPrivilegedIdentity(tenant.id, session.role, tenant.settings, id, { isDemo: tenant.is_demo })
   if (!profile) notFound()

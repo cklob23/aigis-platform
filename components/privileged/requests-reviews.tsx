@@ -1,10 +1,18 @@
-import Link from 'next/link'
 import { ClipboardCheck, Wrench } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { PrivilegedIdentityProfile } from '@/lib/privileged/profile'
 import { formatDate, titleCase } from '@/lib/format'
 import { cn } from '@/lib/utils'
+
+const PREVIEW_TAG =
+  'rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground'
+
+function reviewOutcome(decision: string | null, status: string, dueAt: string | null) {
+  const label = titleCase(decision ?? status)
+  const when = dueAt ? formatDate(dueAt) : null
+  return when ? `${label} ${when}` : label
+}
 
 export function RequestsReviews({ profile }: { profile: PrivilegedIdentityProfile }) {
   return (
@@ -13,16 +21,15 @@ export function RequestsReviews({ profile }: { profile: PrivilegedIdentityProfil
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ClipboardCheck className="size-4" /> Reviews
+            <span className={PREVIEW_TAG}>Preview</span>
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col divide-y">
           {profile.reviews.map((r) => (
-            <Link key={r.id} href={`/reviews/${r.id}`} className="flex items-center justify-between gap-3 py-2 text-sm hover:underline">
-              <span className="truncate">{r.name}</span>
-              <Badge variant="outline" className="capitalize">
-                {r.decision ?? r.status}
-              </Badge>
-            </Link>
+            <div key={r.id} className="flex flex-col gap-0.5 py-2 text-sm">
+              <span className="text-pretty">{r.name}</span>
+              <span className="text-muted-foreground text-xs">{reviewOutcome(r.decision, r.status, r.dueAt)}</span>
+            </div>
           ))}
           {profile.reviews.length === 0 && <p className="text-muted-foreground text-sm">Never included in a privileged review.</p>}
         </CardContent>
@@ -31,6 +38,7 @@ export function RequestsReviews({ profile }: { profile: PrivilegedIdentityProfil
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Wrench className="size-4" /> Requests
+            <span className={PREVIEW_TAG}>Soon</span>
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col divide-y">

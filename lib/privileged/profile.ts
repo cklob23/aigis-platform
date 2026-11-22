@@ -5,12 +5,14 @@ import {
   assignmentState,
   holderIdentifier,
   mfaMethodLabel,
+  nextPrivilegedReviewDueAt,
   privilegedClassLabel,
   type PrivilegedAssignmentRow,
   type PrivilegedIdentityRow,
   type PrivilegedRoleRow,
 } from '@/lib/privileged/view'
 import { DAILY_USE_DAYS, DORMANT_ADMIN_DAYS, daysSince, overlayRecommendedAction, recommendAssignmentChange } from '@/lib/risk/privileged'
+import { levelFor } from '@/lib/risk/engine'
 
 export const ASSIGNMENT_CHANGE_LABEL: Record<AssignmentRecommendedChange, string> = {
   convert_to_eligible: 'Convert to eligible',
@@ -26,6 +28,7 @@ export type PrivilegedActivation = {
   durationMinutes: number | null
   result: string | null
   ticket: string | null
+  approval: string | null
 }
 
 export type PrivilegedProfileAssignment = {
@@ -80,6 +83,7 @@ export type PrivilegedIdentityProfile = {
   mfaLabel: string
   entraUrl: string | null
   pimAvailable: boolean
+  nextPrivilegedReviewAt: string | null
   assignments: PrivilegedProfileAssignment[]
   activations: PrivilegedActivation[]
   factors: RiskFactor[]
@@ -97,7 +101,7 @@ export function directoryScopeLabel(scopeId: string | null | undefined) {
 
 /** Drop activation justifications before anything is shown or sent to explain. */
 export function publicActivation(
-  row: PrivilegedActivation & { justification?: string | null },
+  row: Omit<PrivilegedActivation, 'approval'> & { justification?: string | null; approval?: string | null },
 ): PrivilegedActivation {
   return {
     id: row.id,
@@ -106,6 +110,7 @@ export function publicActivation(
     durationMinutes: row.durationMinutes,
     result: row.result,
     ticket: row.ticket,
+    approval: row.approval ?? null,
   }
 }
 
@@ -124,6 +129,7 @@ export function parseStoredActivations(value: unknown): PrivilegedActivation[] {
         durationMinutes: typeof row.durationMinutes === 'number' ? row.durationMinutes : null,
         result: typeof row.result === 'string' ? row.result : null,
         ticket: typeof row.ticket === 'string' ? row.ticket : null,
+        approval: typeof row.approval === 'string' ? row.approval : null,
         justification: typeof row.justification === 'string' ? row.justification : null,
       }),
     )
@@ -199,8 +205,12 @@ export function buildPrivilegedProfile(input: {
     }
   })
 
+  const factors = input.factors ?? []
+  const derivedScore = Math.min(100, factors.reduce((sum, f) => sum + f.points, 0))
+  const riskScore = factors.length > 0 ? derivedScore : identity.risk_score
+  const riskLevel = factors.length > 0 ? levelFor(derivedScore) : identity.risk_level
   const storedAction = identity.recommended_action ?? null
-  const recommendedAction = overlayRecommendedAction(identity.risk_level, storedAction ?? 'keep')
+  const recommendedAction = overlayRecommendedAction(riskLevel, storedAction ?? 'keep')
 
   return {
     identityId: identity.id,
@@ -211,8 +221,8 @@ export function buildPrivilegedProfile(input: {
     classLabel: privilegedClassLabel(identity.identity_class, Boolean(identity.dedicated_admin)),
     dedicatedAdmin: Boolean(identity.dedicated_admin),
     privilegeTier: identity.privilege_tier,
-    riskScore: identity.risk_score,
-    riskLevel: identity.risk_level,
+    riskScore,
+    riskLevel,
     recommendedAction,
     status: identity.status,
     accountEnabled,
@@ -226,9 +236,10 @@ export function buildPrivilegedProfile(input: {
       ? entraIdentityUrl({ objectId: identity.ms_object_id, identityClass: identity.identity_class })
       : null,
     pimAvailable: input.pimAvailable,
+    nextPrivilegedReviewAt: nextPrivilegedReviewDueAt(identity.last_reviewed_at),
     assignments,
     activations: input.pimAvailable ? (input.activations ?? []).map((row) => publicActivation(row)) : [],
-    factors: input.factors ?? [],
+    factors,
     reviews: input.reviews ?? [],
     requests: input.requests ?? [],
     explanation: input.explanation ?? null,

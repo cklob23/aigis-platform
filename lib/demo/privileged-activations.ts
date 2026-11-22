@@ -5,11 +5,12 @@ export const DEMO_ACTIVATIONS_BY_EMAIL: Record<string, PrivilegedActivation[]> =
   'adele.admin@contoso.example': [
     publicActivation({
       id: 'act-adele-1',
-      roleName: 'Global Administrator',
+      roleName: 'Privileged Role Administrator',
       activatedAt: '2026-11-18T10:04:00.000Z',
       durationMinutes: 90,
       result: 'success',
       ticket: 'CHG-2044',
+      approval: 'Approved',
       justification: 'Do not cite this justification',
     }),
   ],
@@ -21,6 +22,7 @@ export const DEMO_ACTIVATIONS_BY_EMAIL: Record<string, PrivilegedActivation[]> =
       durationMinutes: 45,
       result: 'success',
       ticket: null,
+      approval: 'Approved',
       justification: 'Hidden from explain',
     }),
   ],

@@ -13,7 +13,7 @@ export function RiskFactorList({ factors, children }: { factors: RiskFactor[]; c
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
         {sorted.map((f) => (
-          <div key={f.key} className="flex items-center gap-3">
+          <div key={f.key} className="flex items-start gap-3 sm:items-center">
             <span className="tnum w-10 text-right font-mono text-sm">{f.points > 0 ? `+${f.points}` : '0'}</span>
             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
               <div
@@ -21,9 +21,9 @@ export function RiskFactorList({ factors, children }: { factors: RiskFactor[]; c
                 style={{ width: `${Math.min(100, f.points * 3)}%` }}
               />
             </div>
-            <div className="flex w-1/2 min-w-0 flex-col">
-              <span className="truncate text-sm">{f.label}</span>
-              {f.detail && <span className="truncate text-muted-foreground text-xs">{f.detail}</span>}
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="text-pretty text-sm">{f.label}</span>
+              {f.detail && <span className="text-pretty text-muted-foreground text-xs">{f.detail}</span>}
             </div>
           </div>
         ))}

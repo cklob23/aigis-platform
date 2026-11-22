@@ -42,7 +42,11 @@ export const OVERLAY_POINTS = {
   disabled_with_role: 15,
   privileged_review_overdue: 10,
   not_reviewed_flag: 10,
+  active_tier0_unknown: 30,
 } as const
+
+export const ACTIVE_TIER0_UNKNOWN_LABEL =
+  'Active Tier 0 assignment (P2 needed to tell permanent from eligible)'
 
 export const DORMANT_ADMIN_DAYS = 90
 /** Privileged access review cadence. Independent of tenant Review every (days). */
@@ -153,6 +157,8 @@ export function scorePrivilegedOverlay(
   if (ctx.hasP2) {
     if (standingOfTier(ctx.assignments, 0)) add(factors, 'permanent_tier0', 'Standing (permanent) Tier 0 assignment')
     if (standingOfTier(ctx.assignments, 1)) add(factors, 'permanent_tier1', 'Standing (permanent) Tier 1 assignment')
+  } else if (tiers.has(0)) {
+    add(factors, 'active_tier0_unknown', ACTIVE_TIER0_UNKNOWN_LABEL)
   }
 
   if (isGuestPrincipal(ctx)) add(factors, 'guest_with_role', 'External identity with an admin role')
@@ -252,6 +258,8 @@ export function recommendAssignmentChange(
   if (ctx.dailyUse && !ctx.dedicatedAdmin && (assignment.privilegeTier === 0 || assignment.privilegeTier === 1)) {
     return 'move_to_dedicated_admin'
   }
+  const isGlobalAdmin = (assignment.roleTemplateId ?? '').toLowerCase() === GLOBAL_ADMIN_TEMPLATE_ID.toLowerCase()
+  if (isGlobalAdmin || assignment.assignmentType === 'eligible') return null
   if ((assignment.directoryScopeId ?? '/') === '/' && assignment.privilegeTier === 0 && ctx.assignmentCount > 1) {
     return 'reduce_scope'
   }

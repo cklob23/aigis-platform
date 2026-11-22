@@ -1,5 +1,6 @@
 import { DEFAULT_AI_SETTINGS, type AiSettings, type RecommendedAction, type RiskFactor } from '@/lib/types'
 import { RECOMMENDATION_LABELS, RECOMMENDATION_SUMMARY, topFactors } from '@/lib/risk/recommendation'
+import { PRIVILEGED_REVIEW_SUMMARY } from '@/lib/privileged/copy'
 
 export type ExplanationCitation = {
   key: string
@@ -70,15 +71,16 @@ export function explainRecommendation(input: {
   }))
   const who = prompt.displayName?.trim() || 'This identity'
   const action = RECOMMENDATION_LABELS[prompt.recommendedAction]
-  const summary = RECOMMENDATION_SUMMARY[prompt.recommendedAction]
+  const summary =
+    input.kind === 'privileged' && prompt.recommendedAction === 'review'
+      ? PRIVILEGED_REVIEW_SUMMARY
+      : RECOMMENDATION_SUMMARY[prompt.recommendedAction]
   const cited =
     citations.length === 0
       ? 'No risk factors are recorded, so the score does not justify a change.'
       : citations.map((c) => `${c.label} (+${c.points}${c.detail ? `, ${c.detail}` : ''})`).join('; ')
   const privilegedNote =
-    input.kind === 'privileged'
-      ? ' Privileged access is never changed by this explanation; AIGIS does not call Microsoft Graph writes.'
-      : ''
+    input.kind === 'privileged' ? ' AIGIS never changes anything in Entra.' : ''
   return {
     title: `Recommended action: ${action}`,
     body: `${who}: ${summary} This is an explanation of the current score, not an access change. A human with remediation permission still has to approve any Entra change.${privilegedNote} Cited factors: ${cited}`,

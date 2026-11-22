@@ -2,7 +2,6 @@ import Link from 'next/link'
 import { ArrowLeft, ExternalLink } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { RiskBadge } from '@/components/risk/risk-badge'
 import { TierBadge } from '@/components/privileged/tier-badge'
 import { AssignmentsTable } from '@/components/privileged/assignments-table'
@@ -18,9 +17,11 @@ import type { PrivilegedIdentityProfile } from '@/lib/privileged/profile'
 export function IdentityProfile({
   profile,
   aiEnabled,
+  explainError = false,
 }: {
   profile: PrivilegedIdentityProfile
   aiEnabled: boolean
+  explainError?: boolean
 }) {
   return (
     <>
@@ -35,22 +36,9 @@ export function IdentityProfile({
             {profile.displayName ?? profile.identifier}
             <TierBadge tier={profile.privilegeTier} />
             <RiskBadge level={profile.riskLevel} score={profile.riskScore} className="text-sm" />
-            {profile.dedicatedAdmin && (
-              <Badge variant="outline" className="font-normal">
-                Dedicated admin
-              </Badge>
-            )}
           </span>
         }
-        description={
-          <span className="flex flex-col gap-0.5">
-            <span className="font-mono text-xs">{profile.identifier}</span>
-            <span>
-              {profile.classLabel}
-              {profile.ownerDisplayName ? ` · Owner ${profile.ownerDisplayName}` : ''}
-            </span>
-          </span>
-        }
+        description={<span className="font-mono text-xs">{profile.identifier}</span>}
         actions={
           profile.entraUrl ? (
             <Button variant="outline" nativeButton={false} render={<a href={profile.entraUrl} target="_blank" rel="noreferrer" />}>
@@ -63,7 +51,12 @@ export function IdentityProfile({
 
       <div className="grid gap-4 lg:grid-cols-3">
         <RiskFactorList factors={profile.factors}>
-          <ExplainRecommendation identityId={profile.identityId} enabled={aiEnabled} initial={profile.explanation} />
+          <ExplainRecommendation
+            identityId={profile.identityId}
+            enabled={aiEnabled}
+            initial={profile.explanation}
+            initialError={explainError}
+          />
         </RiskFactorList>
         <RecommendationCard profile={profile} />
       </div>

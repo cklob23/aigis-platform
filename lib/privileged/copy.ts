@@ -31,7 +31,16 @@ export const PIM_ACTIVATION_NOTE =
 export const PRIVILEGED_RECOMMENDATION_NOTE =
   'This is a recommendation. A human still has to request and approve any change in Microsoft Entra. AIGIS never changes Entra for privileged access.'
 
+export const PRIVILEGED_REVIEW_SUMMARY =
+  'Confirm the role is still needed with the account owner or a Global Administrator before requesting a change.'
+
 export const OPEN_IN_ENTRA = 'Open in Microsoft Entra'
+
+export const OPEN_ROLE_DEFINITION = 'Open role definition in Microsoft Entra'
+
+export const EXPLAIN_GENERATED_CAPTION = 'Generated from score factors'
+
+export const EXPLAIN_FAILED = "Couldn't generate an explanation."
 
 export const EXCLUDED_ROLES_NOTE =
   'Not counted as privileged. Directory Readers and Guest Inviter are excluded, so holders of only those roles do not appear here or in privileged reviews.'

@@ -72,7 +72,10 @@ describe('explainRecommendation', () => {
       activations: [{ justification: 'Emergency break-glass for clinic outage' }],
     })
     expect(out.citations.map((c) => c.key)).toEqual(['permanent_tier0', 'tier0_role'])
-    expect(out.body).toContain('never changed')
+    expect(out.body).toContain('AIGIS never changes anything in Entra')
+    expect(out.body).toContain('account owner or a Global Administrator')
+    expect(out.body).not.toContain('sponsor')
+    expect(out.body).not.toContain('Graph')
     expect(out.body).not.toContain('Emergency break-glass')
   })
 })

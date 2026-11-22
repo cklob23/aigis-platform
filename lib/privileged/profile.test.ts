@@ -75,9 +75,27 @@ describe('privilegedDemoAdeleProfile', () => {
     const profile = privilegedDemoAdeleProfile(true)
     expect(profile.displayName).toBe('Adele Admin')
     expect(profile.identifier).toBe('adele.admin@contoso.example')
-    expect(profile.activations.some((row) => row.roleName === 'Global Administrator')).toBe(true)
+    expect(profile.riskScore).toBe(profile.factors.reduce((sum, f) => sum + f.points, 0))
+    expect(profile.assignments.filter((row) => row.roleName === 'Global Administrator')).toHaveLength(1)
+    expect(profile.assignments.find((row) => row.roleName === 'Global Administrator')?.recommendedChange).toBe(
+      'convert_to_eligible',
+    )
+    expect(profile.assignments.find((row) => row.roleName === 'Privileged Role Administrator')?.recommendedChange).toBeNull()
+    expect(profile.assignments.some((row) => row.recommendedChange === 'reduce_scope')).toBe(false)
+    expect(profile.assignments.some((row) => row.roleName === 'Privileged Role Administrator' && row.state === 'eligible')).toBe(true)
+    expect(profile.activations.some((row) => row.roleName === 'Privileged Role Administrator')).toBe(true)
+    expect(profile.activations.some((row) => row.roleName === 'Global Administrator')).toBe(false)
+    expect(profile.nextPrivilegedReviewAt).toBe('2026-12-11T00:00:00.000Z')
     expect(profile.assignments.some((row) => row.entraUrl?.includes('roleId/'))).toBe(true)
     expect(JSON.stringify(profile)).not.toMatch(/justification/i)
     expect(JSON.stringify(profile)).not.toContain('Do not cite')
+  })
+
+  it('does not call standing-permanent Tier 0 without P2', () => {
+    const profile = privilegedDemoAdeleProfile(false)
+    expect(profile.factors.some((f) => f.label.includes('P2 needed'))).toBe(true)
+    expect(profile.factors.some((f) => /Standing \(permanent\)/.test(f.label))).toBe(false)
+    expect(profile.riskScore).toBe(profile.factors.reduce((sum, f) => sum + f.points, 0))
+    expect(profile.activations).toEqual([])
   })
 })

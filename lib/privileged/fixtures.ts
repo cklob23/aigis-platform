@@ -10,6 +10,7 @@ import {
 } from '@/lib/privileged/tiers'
 import { tier0RoleDescription } from '@/lib/privileged/copy'
 import { buildPrivilegedProfile, publicActivation, type PrivilegedIdentityProfile } from '@/lib/privileged/profile'
+import { ACTIVE_TIER0_UNKNOWN_LABEL } from '@/lib/risk/privileged'
 import {
   buildHighestRiskHolders,
   buildPrivilegedHolders,
@@ -533,9 +534,14 @@ export const FIXTURE_PRIVILEGE_TIERS: Record<string, 0 | 1 | 2> = {
   'fab-vendor': 1,
 }
 
-const LEE_FACTORS = [
+function standingTier0Factor(pimAvailable: boolean) {
+  return pimAvailable
+    ? { key: 'permanent_tier0', label: 'Standing (permanent) Tier 0 assignment', points: 30 }
+    : { key: 'active_tier0_unknown', label: ACTIVE_TIER0_UNKNOWN_LABEL, points: 30 }
+}
+
+const LEE_BASE_FACTORS = [
   { key: 'tier0_role', label: 'Holds a Tier 0 directory role', points: 25 },
-  { key: 'permanent_tier0', label: 'Standing (permanent) Tier 0 assignment', points: 30 },
   { key: 'privileged_review_overdue', label: 'Privileged access review overdue', points: 10, detail: 'Last review 143 days ago' },
   { key: 'strong_auth_ok', label: 'Strong authentication registered', points: 0 },
 ]
@@ -548,6 +554,7 @@ const LEE_ACTIVATIONS = [
     durationMinutes: 120,
     result: 'success',
     ticket: 'INC-4412',
+    approval: 'Approved',
     justification: 'Emergency break-glass for clinic outage',
   }),
   publicActivation({
@@ -557,6 +564,7 @@ const LEE_ACTIVATIONS = [
     durationMinutes: 60,
     result: 'success',
     ticket: null,
+    approval: 'Approved',
     justification: 'Must never reach the AI prompt',
   }),
 ]
@@ -581,7 +589,10 @@ export function privilegedProfileFixture(
     assignments: assignments.filter((row) => row.principal_identity_id === identity.id),
     roles,
     pimAvailable,
-    factors: identityId.endsWith('lee') || identityId === 'id-lee' ? LEE_FACTORS : LEE_FACTORS.slice(0, 2),
+    factors:
+      identityId.endsWith('lee') || identityId === 'id-lee'
+        ? [standingTier0Factor(pimAvailable), ...LEE_BASE_FACTORS]
+        : [standingTier0Factor(pimAvailable), LEE_BASE_FACTORS[0]!],
     activations: pimAvailable && (identityId === 'id-lee' || identityId === 'fab-lee') ? LEE_ACTIVATIONS : [],
     reviews: [
       {
@@ -598,7 +609,7 @@ export function privilegedProfileFixture(
   })
 }
 
-/** Contoso demo tenant: Adele Admin with standing + eligible Global Administrator. */
+/** Contoso demo tenant: Adele Admin with standing GA and eligible Privileged Role Administrator. */
 export function privilegedDemoAdeleProfile(pimAvailable = true): PrivilegedIdentityProfile {
   const adele = CONTOSO_INTERNAL_USERS[1]!
   const identityId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
@@ -606,7 +617,7 @@ export function privilegedDemoAdeleProfile(pimAvailable = true): PrivilegedIdent
   const assignments = [
     assignment('asg-adele-ga', identityId, 'role-ga'),
     ...(pimAvailable
-      ? [assignment('elig-adele-ga', identityId, 'role-ga', { assignment_type: 'eligible', pim_status: 'Provisioned' })]
+      ? [assignment('elig-adele-pra', identityId, 'role-pra', { assignment_type: 'eligible', pim_status: 'Provisioned' })]
       : []),
   ]
   return buildPrivilegedProfile({
@@ -627,8 +638,9 @@ export function privilegedDemoAdeleProfile(pimAvailable = true): PrivilegedIdent
     roles,
     pimAvailable,
     factors: [
-      { key: 'permanent_tier0', label: 'Standing (permanent) Tier 0 assignment', points: 30 },
+      standingTier0Factor(pimAvailable),
       { key: 'tier0_role', label: 'Holds a Tier 0 directory role', points: 25 },
+      { key: 'no_owner', label: 'Privileged identity has no owner', points: 10 },
       { key: 'strong_auth_ok', label: 'Strong authentication registered', points: 0 },
     ],
     activations: pimAvailable ? (DEMO_ACTIVATIONS_BY_EMAIL[adele.email] ?? []) : [],

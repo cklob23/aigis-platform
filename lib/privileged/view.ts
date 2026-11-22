@@ -221,11 +221,25 @@ export function privilegedClassLabel(identityClass: IdentityClass, dedicatedAdmi
   return IDENTITY_CLASS_LABEL[identityClass]
 }
 
+const AUTH_METHOD_LABELS: Record<string, string> = {
+  microsoftAuthenticatorAuthenticationMethod: 'Microsoft Authenticator',
+  passwordAuthenticationMethod: 'Password',
+  phoneAuthenticationMethod: 'Phone',
+  fido2AuthenticationMethod: 'FIDO2',
+  windowsHelloForBusinessAuthenticationMethod: 'Windows Hello',
+  softwareOathAuthenticationMethod: 'Authenticator app (OATH)',
+  hardwareOathAuthenticationMethod: 'Hardware OATH',
+  emailAuthenticationMethod: 'Email',
+  certificateBasedAuthenticationMethod: 'Certificate',
+}
+
 export function mfaMethodLabel(identityClass: IdentityClass, methods: string[] | null | undefined): string {
   if (identityClass === 'non_human' || identityClass === 'group' || identityClass === 'agent') return 'n/a'
   if (methods == null) return '—'
   if (methods.length === 0) return 'None'
-  return 'Yes'
+  return methods
+    .map((method) => AUTH_METHOD_LABELS[method] ?? method.replace(/AuthenticationMethod$/, ''))
+    .join(', ')
 }
 
 export function emptyClassCounts(): Record<IdentityClass, number> {

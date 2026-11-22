@@ -18,9 +18,10 @@ import { ReadOnlySummary } from '@/components/privileged/read-only-summary'
 import { RemediationPlaceholder } from '@/components/privileged/remediation-placeholder'
 import { PrivilegedDashboardCard } from '@/components/privileged/dashboard-card'
 import { PrivilegedOverview } from '@/components/privileged/overview'
-import { privilegedFixture, privilegedProfileFixture } from '@/lib/privileged/fixtures'
+import { privilegedDemoAdeleProfile, privilegedFixture, privilegedProfileFixture } from '@/lib/privileged/fixtures'
 import { IdentityProfile } from '@/components/privileged/identity-profile'
-import { PIM_ACTIVATION_WINDOW, OPEN_IN_ENTRA } from '@/lib/privileged/copy'
+import { PrivilegedDetailDenied } from '@/components/privileged/detail-denied'
+import { EXPLAIN_GENERATED_CAPTION, OPEN_ROLE_DEFINITION, PIM_ACTIVATION_WINDOW, OPEN_IN_ENTRA, PRIVILEGED_DETAIL_DENIED, PRIVILEGED_REVIEW_SUMMARY } from '@/lib/privileged/copy'
 import {
   AZURE_RBAC_FILTER_PILL,
   EXCLUDED_ROLES_NOTE,
@@ -197,6 +198,15 @@ describe('PrivilegedOverview', () => {
   })
 })
 
+describe('High risk badge contrast', () => {
+  it('uses #92400E on the light High badge', () => {
+    const src = readFileSync(path.join(root, 'components/risk/risk-badge.tsx'), 'utf8')
+    expect(src).toContain("high: 'bg-[#FFEDD5] text-[#92400E]")
+    expect(src).not.toContain('text-[#B45309]')
+    expect(src).not.toContain('text-[#9A3412]')
+  })
+})
+
 describe('placeholder copy', () => {
   it('does not offer Start privileged review yet', () => {
     const src = readFileSync(path.join(root, 'components/privileged/privileged-page.tsx'), 'utf8')
@@ -207,6 +217,7 @@ describe('placeholder copy', () => {
     const src = readFileSync(path.join(root, 'app/(app)/privileged/[id]/page.tsx'), 'utf8')
     expect(src).toContain('IdentityProfile')
     expect(src).toContain('getPrivilegedIdentity')
+    expect(src).toContain('PrivilegedDetailDenied')
     expect(src).toMatch(/if \(!profile\) notFound\(\)/)
   })
 })
@@ -224,23 +235,85 @@ describe('IdentityProfile', () => {
     expect(html).toContain(PIM_ACTIVATION_WINDOW)
     expect(html).toContain('Privileged Role Administrator')
     expect(html).toContain('Standing (permanent) Tier 0 assignment')
-    expect(html).toContain('Explain with AI')
+    expect(html).toContain('>Explain<')
+    expect(html).not.toContain('Explain with AI')
     expect(html).toContain('data-explain-state="empty"')
+    expect(html).toContain(OPEN_ROLE_DEFINITION)
+    expect(html).toContain('No end')
+    expect(html).toContain('Last activity')
+    expect(html).toContain('Microsoft Authenticator')
+    expect(html).toContain(PRIVILEGED_REVIEW_SUMMARY)
     expect(html).not.toContain('Emergency break-glass')
     expect(html).not.toMatch(/justification/i)
   })
 
-  it('hides PIM activation history without P2', () => {
+  it('hides the explain panel when AI is off', () => {
     const html = renderToStaticMarkup(
       createElement(IdentityProfile, {
-        profile: privilegedProfileFixture(false),
+        profile: privilegedDemoAdeleProfile(true),
         aiEnabled: false,
       }),
     )
-    expect(html).toContain('Lee Gu')
+    expect(html).not.toContain('Recommendation explanation')
+    expect(html).not.toContain('Explain with AI')
+    expect(html).not.toContain('AI explanations are off')
+    expect(html).not.toContain('text-destructive')
+  })
+
+  it('hides PIM activation history without P2 and still shows Explain when AI is on', () => {
+    const html = renderToStaticMarkup(
+      createElement(IdentityProfile, {
+        profile: privilegedDemoAdeleProfile(false),
+        aiEnabled: true,
+      }),
+    )
+    expect(html).toContain('Adele Admin')
     expect(html).not.toContain(PIM_ACTIVATION_WINDOW)
     expect(html).not.toContain('PIM activation history')
-    expect(html).not.toContain('Explain with AI')
+    expect(html).toContain('>Explain<')
+    expect(html).toContain('P2 needed to tell permanent from eligible')
+    expect(html).not.toContain('Standing (permanent) Tier 0')
+  })
+
+  it('shows a gray failure state with Try again', () => {
+    const html = renderToStaticMarkup(
+      createElement(IdentityProfile, {
+        profile: privilegedDemoAdeleProfile(true),
+        aiEnabled: true,
+        explainError: true,
+      }),
+    )
+    expect(html).toContain('data-explain-state="error"')
+    expect(html).toMatch(/Couldn(?:'|&#x27;)t generate an explanation/)
+    expect(html).toContain('Try again')
+    expect(html).not.toContain('text-destructive')
+    expect(html).not.toContain('AI explanations are off')
+  })
+
+  it('captions a filled explanation and offers Regenerate', () => {
+    const base = privilegedDemoAdeleProfile(true)
+    const html = renderToStaticMarkup(
+      createElement(IdentityProfile, {
+        profile: {
+          ...base,
+          explanation: {
+            explanation: 'Adele Admin: Confirm the role is still needed.',
+            created_at: '2026-11-21T12:00:00.000Z',
+          },
+        },
+        aiEnabled: true,
+      }),
+    )
+    expect(html).toContain(EXPLAIN_GENERATED_CAPTION)
+    expect(html).toContain('Regenerate')
+    expect(html).toContain('data-explain-state="ready"')
+  })
+
+  it('denies Read Only with a back link to privileged totals', () => {
+    const html = renderToStaticMarkup(createElement(PrivilegedDetailDenied))
+    expect(html).toContain(PRIVILEGED_DETAIL_DENIED)
+    expect(html).toContain('href="/privileged"')
+    expect(html).toContain('Privileged access')
   })
 
   it('links role holders to the identity profile', () => {
