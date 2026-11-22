@@ -18,7 +18,7 @@ function guestSortValue(guest: Guest, sort: GuestScoreListFilters['sort']) {
 
 export function filterSortPageGuests(guests: Guest[], f: GuestScoreListFilters) {
   const page = Math.max(1, f.page ?? 1)
-  const pageSize = Math.min(200, f.pageSize ?? 50)
+  const pageSize = Math.min(10_000, Math.max(1, f.pageSize ?? 50))
   let next = guests
   if (f.risk && f.risk !== 'all') next = next.filter((guest) => guest.risk_level === f.risk)
   if (f.cause) next = next.filter((guest) => guest.risk_factors.some((factor) => factor.key === f.cause))

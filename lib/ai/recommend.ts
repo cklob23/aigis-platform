@@ -71,7 +71,10 @@ export function explainRecommendation(input: {
   assignments?: { roleName: string; recommendedChange: AssignmentRecommendedChange | null }[]
 }): RecommendationExplanation {
   const prompt = buildExplainPromptInput(input)
-  const citations = topFactors(prompt.factors, 5).map((f) => ({
+  const citations = topFactors(
+    prompt.factors.filter((factor) => factor.points > 0),
+    5,
+  ).map((f) => ({
     key: f.key,
     label: f.label,
     points: f.points,

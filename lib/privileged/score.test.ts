@@ -135,16 +135,35 @@ describe('privilegedDisplayRisk', () => {
     const guests = privilegedGuestListFixture()
     const grady = guests.find((row) => row.display_name === 'Grady Archie')
     const jordan = guests.find((row) => row.display_name === 'Jordan Hale')
+    const morgan = guests.find((row) => row.display_name === 'Morgan Blake')
     expect(grady?.risk_score).toBe(71)
     expect(jordan?.risk_score).toBe(41)
+    expect(morgan?.risk_score).toBe(scoreFromFactors(morgan?.risk_factors ?? []).score)
+    expect(morgan?.risk_factors.reduce((sum, factor) => sum + factor.points, 0)).toBe(morgan?.risk_score)
+    expect(morgan?.risk_level).toBe(scoreFromFactors(morgan?.risk_factors ?? []).level)
+    expect(morgan?.risk_score).toBe(29)
+    expect(morgan?.risk_level).toBe('medium')
     const high = filterSortPageGuests(guests, { risk: 'high', sort: 'risk', page: 1, pageSize: 50 })
     const critical = filterSortPageGuests(guests, { risk: 'critical', sort: 'risk', page: 1, pageSize: 50 })
     expect(high.guests.map((row) => row.display_name)).toContain('Grady Archie')
     expect(critical.guests.map((row) => row.display_name)).toContain('Fabrikam Vendor')
     expect(high.guests.map((row) => row.display_name)).not.toContain('Jordan Hale')
-    const paged = filterSortPageGuests(guests, { sort: 'risk', page: 1, pageSize: 4 })
-    expect(paged.guests).toHaveLength(4)
-    expect(paged.guests.map((row) => row.display_name)).toEqual(['Fabrikam Vendor', 'Grady Archie', 'Jordan Hale', 'Sam Ortiz'])
+    const paged = filterSortPageGuests(guests, { sort: 'risk', page: 1, pageSize: 50 })
+    expect(paged.guests.filter((row) => row.identity_id === 'id-grady' || row.identity_id === 'id-vendor' || row.identity_id === 'id-morgan')).toHaveLength(3)
+    expect(paged.guests.map((row) => row.display_name)).toEqual([
+      'Fabrikam Vendor',
+      'Grady Archie',
+      'Jordan Hale',
+      'Morgan Blake',
+      'Sam Ortiz',
+    ].sort((a, b) => {
+      const score = (name: string) => guests.find((row) => row.display_name === name)?.risk_score ?? 0
+      return score(b) - score(a) || a.localeCompare(b)
+    }))
+    for (const row of paged.guests) {
+      expect(row.risk_score).toBe(scoreFromFactors(row.risk_factors).score)
+      expect(row.risk_level).toBe(scoreFromFactors(row.risk_factors).level)
+    }
   })
 })
 

@@ -33,6 +33,16 @@ export async function listGuests(tenantId: string, f: GuestFilters, settings?: R
   return filterSortPageGuests(scored, f)
 }
 
+/** All matching guests after combined scoring. Used by CSV so export does not reload each page. */
+export async function listMatchingGuests(tenantId: string, f: GuestFilters, settings?: Record<string, unknown> | null) {
+  if (!privilegedPagesEnabled(settings)) {
+    const guests = await listAllIdentitiesUnpaged(tenantId, f)
+    return filterSortPageGuests(guests, { ...f, page: 1, pageSize: Math.max(guests.length, 1) }).guests
+  }
+  const scored = await guestsWithCombinedScores(tenantId, f, settings)
+  return filterSortPageGuests(scored, { ...f, page: 1, pageSize: Math.max(scored.length, 1) }).guests
+}
+
 /** How many guests at a given risk level carry each groupable cause. Guests can appear in more than one group. */
 export async function getCauseCounts(tenantId: string, risk: RiskLevel, settings?: Record<string, unknown> | null) {
   if (privilegedPagesEnabled(settings)) {

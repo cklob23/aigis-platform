@@ -399,6 +399,9 @@ describe('IdentityProfile', () => {
     const list = readFileSync(path.join(root, 'lib/data/guests.ts'), 'utf8')
     expect(list).toContain('privilegedIdentityIdsAmong')
     expect(list).toContain('loadPrivilegedOverlayContexts(tenantId, settings, privilegedIds)')
+    const exportSrc = readFileSync(path.join(root, 'app/api/export/route.ts'), 'utf8')
+    expect(exportSrc).toContain('listMatchingGuests')
+    expect(exportSrc).not.toMatch(/for \(let page = 1; page <= 50/)
   })
 
 })

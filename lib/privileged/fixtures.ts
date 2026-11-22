@@ -164,7 +164,7 @@ const P2_IDENTITIES: PrivilegedIdentityRow[] = [
     risk_score: 29,
     risk_level: 'low',
   }),
-  identity('id-hr-sync', 'Contoso-HR-Sync', null, 'non_human', 0, {
+  identity('id-hr-sync', 'Northwind-HR-Sync', null, 'non_human', 0, {
     auth_methods: null,
     app_id: '7f3c9a12-4d80-4c2e-9a11-0c8e4f00b21e',
     last_reviewed_at: OVERDUE_HR_SYNC,
@@ -194,6 +194,24 @@ const P2_IDENTITIES: PrivilegedIdentityRow[] = [
     last_activity_at: '2026-11-18T04:00:00.000Z',
     risk_score: 27,
     risk_level: 'low',
+  }),
+  identity('id-morgan', 'Morgan Blake', 'morgan.blake@woodgrove.example', 'external', 2, {
+    dedicated_admin: false,
+    owner_display_name: 'Pat Sponsor',
+    last_reviewed_at: LAST_REVIEW,
+    last_activity_at: '2026-11-18T09:00:00.000Z',
+    risk_score: 39,
+    risk_level: 'medium',
+    auth_methods: ['microsoftAuthenticatorAuthenticationMethod'],
+    guestRisk: {
+      invitationStatus: 'Accepted',
+      createdAt: '2025-08-01T00:00:00.000Z',
+      lastSignInAt: '2026-11-18T09:00:00.000Z',
+      hasSponsor: true,
+      sponsorEnabled: true,
+      domainClassification: 'vendor',
+      memberships: [],
+    },
   }),
   identity('id-vendor', 'Fabrikam Vendor', 'vendor@fabrikam.example', 'external', 1, {
     last_reviewed_at: null,
@@ -309,6 +327,7 @@ const P2_ASSIGNMENTS: PrivilegedAssignmentRow[] = [
   assignment('asg-nestor-ex', 'id-nestor', 'role-exchange'),
   assignment('asg-lynne-sr', 'id-lynne', 'role-security-reader'),
   assignment('elig-diego-app', 'id-diego', 'role-app', { assignment_type: 'eligible', pim_status: 'Provisioned' }),
+  assignment('asg-morgan-gr', 'id-morgan', 'role-global-reader'),
   assignment('asg-vendor-helpdesk', 'id-vendor', 'role-helpdesk'),
   assignment('asg-adele-dir-readers', 'id-adele', 'role-directory-readers'),
 ]
@@ -372,6 +391,7 @@ const P2_TOP_FACTORS: Record<string, string> = {
   'id-lee': 'Holds a Tier 0 directory role',
   'id-priya': 'No strong authentication',
   'id-grady': 'External identity with an admin role',
+  'id-morgan': 'External identity with an admin role',
   'id-hr-sync': 'Service principal with a role',
 }
 
@@ -388,8 +408,8 @@ const P2_ROLE_STATS: Record<string, RoleStat> = {
   'Privileged Role Administrator': { holders: 2, permanent: 1, eligible: 1, lastReviewAt: PRA_REVIEW },
   'Privileged Authentication Administrator': { holders: 2, permanent: 1, eligible: 1, lastReviewAt: LAST_REVIEW },
   'Conditional Access Administrator': { holders: 3, permanent: 1, eligible: 2, lastReviewAt: LAST_REVIEW },
-  'Application Administrator': { holders: 4, permanent: 5, eligible: 2, lastReviewAt: null },
-  'Cloud Application Administrator': { holders: 3, permanent: 2, eligible: 3, lastReviewAt: null },
+  'Application Administrator': { holders: 7, permanent: 5, eligible: 2, lastReviewAt: null },
+  'Cloud Application Administrator': { holders: 5, permanent: 2, eligible: 3, lastReviewAt: null },
   'Hybrid Identity Administrator': { holders: 2, permanent: 1, eligible: 1, lastReviewAt: LAST_REVIEW },
   'Directory Synchronization Accounts': { holders: 1, permanent: 1, eligible: 0, lastReviewAt: LAST_REVIEW },
   'Domain Name Administrator': { holders: 1, permanent: 0, eligible: 1, lastReviewAt: null },
@@ -541,6 +561,8 @@ export const FIXTURE_PRIVILEGE_TIERS: Record<string, 0 | 1 | 2> = {
   'guest-id-vendor': 1,
   'id-grady': 1,
   'id-vendor': 1,
+  'id-morgan': 2,
+  'guest-id-morgan': 2,
   'fab-vendor': 1,
 }
 
@@ -783,11 +805,62 @@ export function vendorGuestFixture(storedScore = 64): Guest {
   return applyCombinedGuestDisplay(stored, overlay, NOW)
 }
 
-/** Four-row External identities list: two privileged guests plus two stored-score unprivileged guests. */
+export function morganGuestFixture(): Guest {
+  const profile = privilegedProfileFixture(true, 'id-morgan')
+  const overlayKeys = new Set(Object.keys(OVERLAY_POINTS))
+  const storedFactors = profile.factors.filter((factor) => !overlayKeys.has(factor.key))
+  const identity = P2_IDENTITIES.find((row) => row.id === 'id-morgan')
+  if (!identity) throw new Error('fixture identity id-morgan missing')
+  const stored: Guest = {
+    id: 'guest-id-morgan',
+    tenant_id: 'tenant-northwind',
+    identity_id: 'id-morgan',
+    ms_object_id: 'ms-id-morgan',
+    display_name: 'Morgan Blake',
+    email: 'morgan.blake@woodgrove.example',
+    upn: 'morgan.blake@woodgrove.example',
+    domain: 'woodgrove.example',
+    external_domain_id: null,
+    company_name: 'Woodgrove',
+    company_source: 'graph',
+    account_enabled: true,
+    invitation_status: 'Accepted',
+    user_type: 'Guest',
+    created_at_ms: '2025-08-01T00:00:00.000Z',
+    last_sign_in_at: '2026-11-18T09:00:00.000Z',
+    last_non_interactive_sign_in_at: null,
+    auth_methods: ['microsoftAuthenticatorAuthenticationMethod'],
+    sponsor_ms_object_id: '11111111-1111-1111-1111-111111111101',
+    sponsor_display_name: 'Pat Sponsor',
+    sponsor_email: 'pat@northwind.example',
+    sponsor_enabled: true,
+    identity_class: 'external',
+    external_type: 'b2b_guest',
+    classification_evidence: [],
+    external_organization_id: null,
+    risk_score: 18,
+    risk_level: 'low',
+    risk_factors: storedFactors,
+    recommended_action: 'review',
+    review_status: 'approved',
+    last_reviewed_at: LAST_REVIEW,
+    first_seen_at: '2025-08-01T00:00:00.000Z',
+    last_seen_at: '2026-11-18T09:00:00.000Z',
+    removed_at: null,
+  }
+  const overlay = privilegedOverlayContext(identity, P2_ASSIGNMENTS, P2_ROLES, {
+    pimAvailable: true,
+    globalAdminCount: 1,
+  })
+  return applyCombinedGuestDisplay(stored, overlay, NOW)
+}
+
+/** External identities sample: three privileged guests plus two stored-score unprivileged guests. */
 export function privilegedGuestListFixture(): Guest[] {
   return [
     gradyGuestFixture(),
     vendorGuestFixture(),
+    morganGuestFixture(),
     unprivilegedGuest({
       id: 'guest-jordan',
       identity_id: 'id-jordan',

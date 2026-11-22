@@ -102,6 +102,22 @@ describe('explainRecommendation', () => {
     expect(out.body).not.toMatch(/confirm the role/i)
     expect(out.body).not.toContain('Keep')
   })
+
+  it('drops zero-point factors from Top score factors', () => {
+    const out = explainRecommendation({
+      recommendedAction: 'review',
+      displayName: 'Lee Gu',
+      kind: 'privileged',
+      factors: [
+        { key: 'tier0_role', label: 'Holds a Tier 0 directory role', points: 25 },
+        { key: 'strong_auth_ok', label: 'Strong authentication registered', points: 0 },
+      ],
+    })
+    expect(out.body).toContain('Top score factors: Holds a Tier 0 directory role (+25).')
+    expect(out.body).not.toContain('(+0)')
+    expect(out.body).not.toContain('Strong authentication registered')
+    expect(out.citations.map((c) => c.key)).toEqual(['tier0_role'])
+  })
 })
 
 describe('AI module isolation', () => {

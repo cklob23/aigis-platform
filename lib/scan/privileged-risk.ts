@@ -5,6 +5,7 @@ import { fetchAllById, type RangeQuery } from '@/lib/supabase/page'
 import { parsePrivilegedSettings, privilegedStageEnabled } from '@/lib/privileged/capability'
 import { parseStoredActivations } from '@/lib/privileged/profile'
 import { GLOBAL_ADMIN_TEMPLATE_ID, type PrivilegedRiskContext } from '@/lib/risk/privileged'
+import { privilegedIdsInSet } from '@/lib/privileged/ids'
 
 type IdentityRow = {
   id: string
@@ -76,19 +77,28 @@ async function countTenantGlobalAdmins(tenantId: string, roles: RoleRow[]): Prom
   return new Set(assignments.map((row) => row.principal_identity_id).filter(Boolean)).size
 }
 
-/** Privileged identity ids that appear in the given set. Does not load the rest of the tenant. */
+/**
+ * Privileged identity ids that appear in the given set. Loads the small
+ * privileged-external set for the tenant, then matches in memory so a few
+ * hundred guest ids never go into one PostgREST `.in()` URL.
+ */
 export async function privilegedIdentityIdsAmong(tenantId: string, identityIds: string[]): Promise<string[]> {
   const unique = [...new Set(identityIds.filter(Boolean))]
   if (unique.length === 0) return []
   const supabase = db()
-  const rows = await fetchAllById<{ id: string }>('privileged identity ids', () =>
-    scopedQuery(
-      supabase.from('identities').select('id').eq('tenant_id', tenantId).eq('is_privileged', true).is('removed_at', null),
-      'id',
-      unique,
-    ),
+  const rows = await fetchAllById<{ id: string }>('privileged external ids', () =>
+    supabase
+      .from('identities')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('is_privileged', true)
+      .eq('identity_class', 'external')
+      .is('removed_at', null) as unknown as RangeQuery<{ id: string }>,
   )
-  return rows.map((row) => row.id)
+  return privilegedIdsInSet(
+    rows.map((row) => row.id),
+    unique,
+  )
 }
 
 /**
