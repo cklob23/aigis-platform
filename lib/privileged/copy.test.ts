@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { DASHBOARD_SUBTITLE_GUESTS_ONLY, DASHBOARD_SUBTITLE_PRIVILEGED, REMEDIATION_PLACEHOLDER } from '@/lib/privileged/copy'
+import { DASHBOARD_SUBTITLE_GUESTS_ONLY, DASHBOARD_SUBTITLE_PRIVILEGED, PIM_ACTIVATION_NOTE, PRIVILEGED_RECOMMENDATION_NOTE, REMEDIATION_PLACEHOLDER } from '@/lib/privileged/copy'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
@@ -18,6 +18,8 @@ describe('dashboard subtitle copy', () => {
     expect(dashboard).toContain('privilegedEnabled ? DASHBOARD_SUBTITLE_PRIVILEGED : DASHBOARD_SUBTITLE_GUESTS_ONLY')
     expect(DASHBOARD_SUBTITLE_GUESTS_ONLY).not.toMatch(/\u2014/)
     expect(DASHBOARD_SUBTITLE_PRIVILEGED).not.toMatch(/\u2014/)
+    expect(PIM_ACTIVATION_NOTE).not.toMatch(/\u2014/)
+    expect(PRIVILEGED_RECOMMENDATION_NOTE).not.toMatch(/\u2014/)
   })
 
   it('keeps More identity types coming under External identities, not Alerts', () => {
@@ -30,5 +32,11 @@ describe('dashboard subtitle copy', () => {
   it('uses the coming-soon remediation copy', () => {
     expect(REMEDIATION_PLACEHOLDER).toContain('Mark change made')
     expect(REMEDIATION_PLACEHOLDER).toContain('AIGIS confirms it on the next scan')
+  })
+
+  it('uses a pipe in the document title template', () => {
+    const layout = readFileSync(path.join(root, 'app/layout.tsx'), 'utf8')
+    expect(layout).toContain("template: '%s | AIGIS'")
+    expect(layout).not.toContain("template: '%s · AIGIS'")
   })
 })

@@ -23,6 +23,16 @@ export const READ_ONLY_PRIVILEGED_DESCRIPTION =
 export const PRIVILEGED_DETAIL_DENIED =
   'Your role can see privileged totals only. Identity names and this profile are not available.'
 
+export const PIM_ACTIVATION_WINDOW = 'Last 30 days'
+
+export const PIM_ACTIVATION_NOTE =
+  'Entra keeps directory audit logs for 30 days. AIGIS will show 90 days of history once it has collected that much.'
+
+export const PRIVILEGED_RECOMMENDATION_NOTE =
+  'This is a recommendation. A human still has to request and approve any change in Microsoft Entra. AIGIS never changes Entra for privileged access.'
+
+export const OPEN_IN_ENTRA = 'Open in Microsoft Entra'
+
 export const EXCLUDED_ROLES_NOTE =
   'Not counted as privileged. Directory Readers and Guest Inviter are excluded, so holders of only those roles do not appear here or in privileged reviews.'
 

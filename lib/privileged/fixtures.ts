@@ -1,6 +1,15 @@
 import type { IdentityClass, RiskLevel } from '@/lib/types'
-import { TIER_0_DIRECTORY_ROLES } from '@/lib/privileged/tiers'
+import { CONTOSO_INTERNAL_USERS } from '@/lib/demo/internal-users'
+import { DEMO_ACTIVATIONS_BY_EMAIL } from '@/lib/demo/privileged-activations'
+import {
+  EXCLUDED_TEMPLATE_IDS,
+  HELPDESK_ADMINISTRATOR_TEMPLATE_ID,
+  TIER_0_DIRECTORY_ROLES,
+  TIER_0_TEMPLATE_IDS,
+  TIER_2_FIXED_TEMPLATE_IDS,
+} from '@/lib/privileged/tiers'
 import { tier0RoleDescription } from '@/lib/privileged/copy'
+import { buildPrivilegedProfile, publicActivation, type PrivilegedIdentityProfile } from '@/lib/privileged/profile'
 import {
   buildHighestRiskHolders,
   buildPrivilegedHolders,
@@ -68,7 +77,7 @@ const T0_ROLE_DEFS: { id: string; name: (typeof TIER_0_DIRECTORY_ROLES)[number] 
 
 function otherRoles(customName: string, customDescription: string): PrivilegedRoleRow[] {
   return [
-    { id: 'role-helpdesk', display_name: 'Helpdesk Administrator', privilege_tier: 1, is_privileged: true, is_built_in: true, description: 'Can reset passwords for non-administrators.' },
+    { id: 'role-helpdesk', display_name: 'Helpdesk Administrator', privilege_tier: 1, is_privileged: true, is_built_in: true, description: 'Can reset passwords for non-administrators.', template_id: HELPDESK_ADMINISTRATOR_TEMPLATE_ID },
     { id: 'role-user-admin', display_name: 'User Administrator', privilege_tier: 1, is_privileged: true, is_built_in: true, description: 'Can manage users and groups.' },
     { id: 'role-security-admin', display_name: 'Security Administrator', privilege_tier: 1, is_privileged: true, is_built_in: true, description: 'Can read security information and reports, and manage security-related features.' },
     { id: 'role-exchange', display_name: 'Exchange Administrator', privilege_tier: 1, is_privileged: true, is_built_in: true, description: 'Can manage Exchange Online.' },
@@ -78,12 +87,12 @@ function otherRoles(customName: string, customDescription: string): PrivilegedRo
     { id: 'role-auth-admin', display_name: 'Authentication Administrator', privilege_tier: 1, is_privileged: true, is_built_in: true, description: 'Can set authentication methods for non-admins.' },
     { id: 'role-password', display_name: 'Password Administrator', privilege_tier: 1, is_privileged: true, is_built_in: true, description: 'Can reset passwords for non-administrators and Password Administrators.' },
     { id: 'role-custom', display_name: customName, privilege_tier: 1, is_privileged: true, is_built_in: false, description: customDescription },
-    { id: 'role-global-reader', display_name: 'Global Reader', privilege_tier: 2, is_privileged: true, is_built_in: true, description: 'Can read everything that a Global Administrator can.' },
-    { id: 'role-security-reader', display_name: 'Security Reader', privilege_tier: 2, is_privileged: true, is_built_in: true, description: 'Can read security information and reports.' },
+    { id: 'role-global-reader', display_name: 'Global Reader', privilege_tier: 2, is_privileged: true, is_built_in: true, description: 'Can read everything that a Global Administrator can.', template_id: TIER_2_FIXED_TEMPLATE_IDS['Global Reader'] },
+    { id: 'role-security-reader', display_name: 'Security Reader', privilege_tier: 2, is_privileged: true, is_built_in: true, description: 'Can read security information and reports.', template_id: TIER_2_FIXED_TEMPLATE_IDS['Security Reader'] },
     { id: 'role-reports-reader', display_name: 'Reports Reader', privilege_tier: 2, is_privileged: true, is_built_in: true, description: 'Can read sign-in and audit reports.' },
     { id: 'role-message-center', display_name: 'Message Center Reader', privilege_tier: 2, is_privileged: true, is_built_in: true, description: 'Can read Message Center posts.' },
-    { id: 'role-directory-readers', display_name: 'Directory Readers', privilege_tier: null, is_privileged: false, is_built_in: true, description: 'Can read basic directory information.' },
-    { id: 'role-guest-inviter', display_name: 'Guest Inviter', privilege_tier: null, is_privileged: false, is_built_in: true, description: 'Can invite guest users.' },
+    { id: 'role-directory-readers', display_name: 'Directory Readers', privilege_tier: null, is_privileged: false, is_built_in: true, description: 'Can read basic directory information.', template_id: EXCLUDED_TEMPLATE_IDS['Directory Readers'] },
+    { id: 'role-guest-inviter', display_name: 'Guest Inviter', privilege_tier: null, is_privileged: false, is_built_in: true, description: 'Can invite guest users.', template_id: EXCLUDED_TEMPLATE_IDS['Guest Inviter'] },
   ]
 }
 
@@ -96,6 +105,7 @@ function directoryRoles(customName: string, customDescription: string): Privileg
       is_privileged: true,
       is_built_in: true,
       description: tier0RoleDescription(row.name),
+      template_id: TIER_0_TEMPLATE_IDS[row.name],
     })),
     ...otherRoles(customName, customDescription),
   ]
@@ -521,4 +531,118 @@ export const FIXTURE_PRIVILEGE_TIERS: Record<string, 0 | 1 | 2> = {
   'id-grady': 1,
   'id-vendor': 1,
   'fab-vendor': 1,
+}
+
+const LEE_FACTORS = [
+  { key: 'tier0_role', label: 'Holds a Tier 0 directory role', points: 25 },
+  { key: 'permanent_tier0', label: 'Standing (permanent) Tier 0 assignment', points: 30 },
+  { key: 'privileged_review_overdue', label: 'Privileged access review overdue', points: 10, detail: 'Last review 143 days ago' },
+  { key: 'strong_auth_ok', label: 'Strong authentication registered', points: 0 },
+]
+
+const LEE_ACTIVATIONS = [
+  publicActivation({
+    id: 'act-lee-1',
+    roleName: 'Privileged Role Administrator',
+    activatedAt: '2026-11-14T09:12:00.000Z',
+    durationMinutes: 120,
+    result: 'success',
+    ticket: 'INC-4412',
+    justification: 'Emergency break-glass for clinic outage',
+  }),
+  publicActivation({
+    id: 'act-lee-2',
+    roleName: 'Privileged Role Administrator',
+    activatedAt: '2026-11-02T16:40:00.000Z',
+    durationMinutes: 60,
+    result: 'success',
+    ticket: null,
+    justification: 'Must never reach the AI prompt',
+  }),
+]
+
+export function privilegedProfileFixture(
+  pimAvailable = true,
+  identityId = pimAvailable ? 'id-lee' : 'fab-lee',
+): PrivilegedIdentityProfile {
+  const identities = pimAvailable ? P2_IDENTITIES : FABRIKAM_IDENTITIES
+  const assignments = pimAvailable ? P2_ASSIGNMENTS : FABRIKAM_ASSIGNMENTS
+  const roles = pimAvailable ? P2_ROLES : FABRIKAM_ROLES
+  const identity = identities.find((row) => row.id === identityId)
+  if (!identity) throw new Error(`fixture identity ${identityId} missing`)
+  return buildPrivilegedProfile({
+    identity: {
+      ...identity,
+      recommended_action: 'review',
+      owner_kind: identity.owner_display_name ? 'assigned' : 'none',
+      first_seen_at: '2026-02-01T00:00:00.000Z',
+      ms_object_id: `ms-${identity.id}`,
+    },
+    assignments: assignments.filter((row) => row.principal_identity_id === identity.id),
+    roles,
+    pimAvailable,
+    factors: identityId.endsWith('lee') || identityId === 'id-lee' ? LEE_FACTORS : LEE_FACTORS.slice(0, 2),
+    activations: pimAvailable && (identityId === 'id-lee' || identityId === 'fab-lee') ? LEE_ACTIVATIONS : [],
+    reviews: [
+      {
+        id: 'rev-lee-1',
+        name: 'Q3 privileged access certification',
+        status: 'completed',
+        decision: 'certified',
+        dueAt: LAST_REVIEW,
+      },
+    ],
+    requests: [],
+    explanation: null,
+    now: NOW,
+  })
+}
+
+/** Contoso demo tenant: Adele Admin with standing + eligible Global Administrator. */
+export function privilegedDemoAdeleProfile(pimAvailable = true): PrivilegedIdentityProfile {
+  const adele = CONTOSO_INTERNAL_USERS[1]!
+  const identityId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
+  const roles = pimAvailable ? P2_ROLES : FABRIKAM_ROLES
+  const assignments = [
+    assignment('asg-adele-ga', identityId, 'role-ga'),
+    ...(pimAvailable
+      ? [assignment('elig-adele-ga', identityId, 'role-ga', { assignment_type: 'eligible', pim_status: 'Provisioned' })]
+      : []),
+  ]
+  return buildPrivilegedProfile({
+    identity: {
+      ...identity(identityId, adele.display_name, adele.email, 'human_internal', 0, {
+        dedicated_admin: true,
+        last_activity_at: '2026-11-18T10:04:00.000Z',
+        risk_score: 71,
+        risk_level: 'high',
+        auth_methods: ['microsoftAuthenticatorAuthenticationMethod'],
+      }),
+      recommended_action: 'review',
+      owner_kind: 'none',
+      first_seen_at: '2026-02-01T00:00:00.000Z',
+      ms_object_id: adele.ms_object_id,
+    },
+    assignments,
+    roles,
+    pimAvailable,
+    factors: [
+      { key: 'permanent_tier0', label: 'Standing (permanent) Tier 0 assignment', points: 30 },
+      { key: 'tier0_role', label: 'Holds a Tier 0 directory role', points: 25 },
+      { key: 'strong_auth_ok', label: 'Strong authentication registered', points: 0 },
+    ],
+    activations: pimAvailable ? (DEMO_ACTIVATIONS_BY_EMAIL[adele.email] ?? []) : [],
+    reviews: [
+      {
+        id: 'rev-adele-1',
+        name: 'Q3 privileged access certification',
+        status: 'completed',
+        decision: 'certified',
+        dueAt: LAST_REVIEW,
+      },
+    ],
+    requests: [],
+    explanation: null,
+    now: NOW,
+  })
 }

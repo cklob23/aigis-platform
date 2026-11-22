@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useMemo, useTransition } from 'react'
+import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Search } from 'lucide-react'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -247,10 +248,10 @@ function HolderRow({ row, pimAvailable }: { row: PrivilegedHolderGroup; pimAvail
   return (
     <TableRow className={STICKY_ROW}>
       <TableCell className={stickyCell('left-0', cn('w-44 min-w-44 max-w-44', STICKY_BELOW_1440))}>
-        <div className="flex min-w-0 flex-col">
+        <Link href={`/privileged/${row.identityId}`} className="flex min-w-0 flex-col hover:underline">
           <span className="truncate font-medium">{row.displayName ?? row.identifier}</span>
           <span className="truncate font-mono text-muted-foreground text-xs">{row.identifier}</span>
-        </div>
+        </Link>
       </TableCell>
       <TableCell className="text-xs">{privilegedClassLabel(row.identityClass, row.dedicatedAdmin)}</TableCell>
       <TableCell>
@@ -289,10 +290,10 @@ function HolderStackedCard({ row, pimAvailable }: { row: PrivilegedHolderGroup; 
   const dormant = row.lastActivityAt == null || (idle !== null && idle >= DORMANT_ADMIN_DAYS)
   return (
     <div className="flex flex-col gap-2 border-b px-3 py-3 last:border-b-0">
-      <div className="flex min-w-0 flex-col">
+      <Link href={`/privileged/${row.identityId}`} className="flex min-w-0 flex-col hover:underline">
         <span className="truncate font-medium">{row.displayName ?? row.identifier}</span>
         <span className="truncate font-mono text-muted-foreground text-xs">{row.identifier}</span>
-      </div>
+      </Link>
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs">{privilegedClassLabel(row.identityClass, row.dedicatedAdmin)}</span>
         <TierBadge tier={row.privilegeTier} />

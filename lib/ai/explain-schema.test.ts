@@ -68,4 +68,21 @@ describe('0007 recommendation explanations (local postgres)', () => {
     apply('supabase/sql/0007_postcheck.sql')
     expect(scalar(`select to_regclass('public.recommendation_explanations') is not null`)).toBe('t')
   })
+
+  it('inserts an identity-only explanation with guest_id null', () => {
+    const identityId = '00000000-0000-0000-0000-000000000198'
+    const tenantId = '00000000-0000-0000-0000-000000000010'
+    psql([
+      '-c',
+      `insert into identities (id, tenant_id, identity_class, display_name)
+       values ('${identityId}', '${tenantId}', 'human_internal', 'Adele Admin')`,
+    ])
+    psql([
+      '-c',
+      `insert into recommendation_explanations (tenant_id, identity_id, guest_id, recommended_action, explanation, citations)
+       values ('${tenantId}', '${identityId}', null, 'review', 'Recommend only.', '[]'::jsonb)`,
+    ])
+    expect(scalar(`select guest_id is null from recommendation_explanations where identity_id = '${identityId}'`)).toBe('t')
+    expect(scalar(`select count(*) from recommendation_explanations where identity_id = '${identityId}'`)).toBe('1')
+  })
 })

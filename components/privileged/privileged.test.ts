@@ -3,7 +3,12 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/lib/actions/ai', () => ({
+  explainGuestRecommendation: vi.fn(),
+  explainIdentityRecommendation: vi.fn(),
+}))
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 import { PimBanner } from '@/components/privileged/pim-banner'
@@ -13,7 +18,9 @@ import { ReadOnlySummary } from '@/components/privileged/read-only-summary'
 import { RemediationPlaceholder } from '@/components/privileged/remediation-placeholder'
 import { PrivilegedDashboardCard } from '@/components/privileged/dashboard-card'
 import { PrivilegedOverview } from '@/components/privileged/overview'
-import { privilegedFixture } from '@/lib/privileged/fixtures'
+import { privilegedFixture, privilegedProfileFixture } from '@/lib/privileged/fixtures'
+import { IdentityProfile } from '@/components/privileged/identity-profile'
+import { PIM_ACTIVATION_WINDOW, OPEN_IN_ENTRA } from '@/lib/privileged/copy'
 import {
   AZURE_RBAC_FILTER_PILL,
   EXCLUDED_ROLES_NOTE,
@@ -194,5 +201,51 @@ describe('placeholder copy', () => {
   it('does not offer Start privileged review yet', () => {
     const src = readFileSync(path.join(root, 'components/privileged/privileged-page.tsx'), 'utf8')
     expect(src).not.toContain('Start privileged review')
+  })
+
+  it('turns the identity route into a real profile', () => {
+    const src = readFileSync(path.join(root, 'app/(app)/privileged/[id]/page.tsx'), 'utf8')
+    expect(src).toContain('IdentityProfile')
+    expect(src).toContain('getPrivilegedIdentity')
+    expect(src).toMatch(/if \(!profile\) notFound\(\)/)
+  })
+})
+
+describe('IdentityProfile', () => {
+  it('renders mock 04 fields for a P2 identity', () => {
+    const html = renderToStaticMarkup(
+      createElement(IdentityProfile, {
+        profile: privilegedProfileFixture(true),
+        aiEnabled: true,
+      }),
+    )
+    expect(html).toContain('Lee Gu')
+    expect(html).toContain(OPEN_IN_ENTRA)
+    expect(html).toContain(PIM_ACTIVATION_WINDOW)
+    expect(html).toContain('Privileged Role Administrator')
+    expect(html).toContain('Standing (permanent) Tier 0 assignment')
+    expect(html).toContain('Explain with AI')
+    expect(html).toContain('data-explain-state="empty"')
+    expect(html).not.toContain('Emergency break-glass')
+    expect(html).not.toMatch(/justification/i)
+  })
+
+  it('hides PIM activation history without P2', () => {
+    const html = renderToStaticMarkup(
+      createElement(IdentityProfile, {
+        profile: privilegedProfileFixture(false),
+        aiEnabled: false,
+      }),
+    )
+    expect(html).toContain('Lee Gu')
+    expect(html).not.toContain(PIM_ACTIVATION_WINDOW)
+    expect(html).not.toContain('PIM activation history')
+    expect(html).not.toContain('Explain with AI')
+  })
+
+  it('links role holders to the identity profile', () => {
+    const html = renderToStaticMarkup(createElement(HoldersTableStatic, { holders: p2.holders, pimAvailable: true }))
+    expect(html).toContain('/privileged/id-lee')
+    expect(html).toContain('/privileged/id-adele')
   })
 })

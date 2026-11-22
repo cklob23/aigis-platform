@@ -3,7 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_AI_SETTINGS } from '@/lib/types'
-import { explainRecommendation, mergeAiSettings, parseAiSettings } from '@/lib/ai/recommend'
+import { aiExplainEnabled, buildExplainPromptInput, explainRecommendation, mergeAiSettings, parseAiSettings } from '@/lib/ai/recommend'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
@@ -29,6 +29,14 @@ describe('mergeAiSettings', () => {
   })
 })
 
+describe('aiExplainEnabled', () => {
+  it('requires the strict true flag', () => {
+    expect(aiExplainEnabled({})).toBe(false)
+    expect(aiExplainEnabled({ ai: { enabled: true } })).toBe(true)
+    expect(aiExplainEnabled({ ai: { enabled: 'true' } })).toBe(false)
+  })
+})
+
 describe('explainRecommendation', () => {
   it('cites factors and stays recommend-only', () => {
     const out = explainRecommendation({
@@ -45,6 +53,28 @@ describe('explainRecommendation', () => {
     expect(out.body).toContain('not an access change')
     expect(out.citations.map((c) => c.key)).toEqual(['no_sponsor', 'domain_unknown'])
   })
+
+  it('cites privileged factor keys and never includes justification text', () => {
+    const prompt = buildExplainPromptInput({
+      recommendedAction: 'review',
+      displayName: 'Lee Gu',
+      factors: [
+        { key: 'permanent_tier0', label: 'Standing (permanent) Tier 0 assignment', points: 30 },
+        { key: 'tier0_role', label: 'Holds a Tier 0 directory role', points: 25 },
+      ],
+      activations: [{ justification: 'Emergency break-glass for clinic outage', roleName: 'PRA' }],
+    })
+    expect(JSON.stringify(prompt)).not.toMatch(/justification/i)
+    expect(JSON.stringify(prompt)).not.toContain('Emergency break-glass')
+    const out = explainRecommendation({
+      ...prompt,
+      kind: 'privileged',
+      activations: [{ justification: 'Emergency break-glass for clinic outage' }],
+    })
+    expect(out.citations.map((c) => c.key)).toEqual(['permanent_tier0', 'tier0_role'])
+    expect(out.body).toContain('never changed')
+    expect(out.body).not.toContain('Emergency break-glass')
+  })
 })
 
 describe('AI module isolation', () => {
@@ -54,8 +84,18 @@ describe('AI module isolation', () => {
       const src = readFileSync(path.join(root, rel), 'utf8')
       expect(src).not.toMatch(/from ['"]@\/lib\/graph/)
       expect(src).not.toMatch(/from ['"]@\/lib\/actions\/remediation/)
+      expect(src).not.toMatch(/from ['"]@\/lib\/remediation/)
       expect(src).not.toMatch(/import\s*\{[^}]*remediateGuest/)
       expect(src).not.toMatch(/GraphClient/)
     }
+  })
+
+  it('returns before writing when the AI flag is off', () => {
+    const src = readFileSync(path.join(root, 'lib/actions/ai.ts'), 'utf8')
+    expect(src).toMatch(/export async function explainIdentityRecommendation/)
+    expect(src).toMatch(/guest_id: null/)
+    const identityFn = src.slice(src.indexOf('explainIdentityRecommendation'))
+    expect(identityFn.indexOf('aiExplainEnabled')).toBeGreaterThan(-1)
+    expect(identityFn.indexOf('aiExplainEnabled')).toBeLessThan(identityFn.indexOf('recommendation_explanations insert'))
   })
 })
