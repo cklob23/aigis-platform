@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_AI_SETTINGS } from '@/lib/types'
 import { aiExplainEnabled, buildExplainPromptInput, explainRecommendation, mergeAiSettings, parseAiSettings } from '@/lib/ai/recommend'
+import { privilegedDemoAdeleProfile } from '@/lib/privileged/fixtures'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
@@ -117,6 +118,24 @@ describe('explainRecommendation', () => {
     expect(out.body).not.toContain('(+0)')
     expect(out.body).not.toContain('Strong authentication registered')
     expect(out.citations.map((c) => c.key)).toEqual(['tier0_role'])
+  })
+
+  it('drops +0 factors from Adele Admin Top score factors', () => {
+    const profile = privilegedDemoAdeleProfile(true)
+    const out = explainRecommendation({
+      recommendedAction: profile.recommendedAction,
+      factors: profile.factors,
+      displayName: profile.displayName,
+      kind: 'privileged',
+      assignments: profile.assignments.map((row) => ({
+        roleName: row.roleName,
+        recommendedChange: row.recommendedChange,
+      })),
+    })
+    expect(profile.factors.some((factor) => factor.points === 0)).toBe(true)
+    expect(out.body).toContain('Top score factors:')
+    expect(out.body).not.toContain('(+0)')
+    expect(out.citations.every((c) => c.points > 0)).toBe(true)
   })
 })
 

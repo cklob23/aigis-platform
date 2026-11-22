@@ -17,6 +17,10 @@ import { RECOMMENDATION_LABELS as ACTION_LABEL } from '@/lib/risk/recommendation
 import { cn } from '@/lib/utils'
 import { TierBadge } from '@/components/privileged/tier-badge'
 
+/** Fixed identity width so the sticky column cannot grow over Domain. Narrower on small screens. */
+const IDENTITY_COL =
+  'w-40 min-w-40 max-w-40 overflow-hidden pr-3 sm:w-52 sm:min-w-52 sm:max-w-52 lg:w-56 lg:min-w-56 lg:max-w-56'
+
 export function GuestTable({
   guests,
   canReview,
@@ -91,8 +95,8 @@ export function GuestTable({
               <TableHead className={stickyCheckboxHead()}>
                 <Checkbox checked={allSelected} onCheckedChange={toggleAll} aria-label="Select all identities on this page" />
               </TableHead>
-              <TableHead className={stickyHead('left-10')}>Identity</TableHead>
-              <TableHead>Domain</TableHead>
+              <TableHead className={stickyHead('left-10', IDENTITY_COL)}>Identity</TableHead>
+              <TableHead className="min-w-0 pl-3">Domain</TableHead>
               <TableHead>Risk</TableHead>
               <TableHead className="hidden lg:table-cell">Top factors</TableHead>
               <TableHead className="hidden md:table-cell">Last sign-in</TableHead>
@@ -106,30 +110,30 @@ export function GuestTable({
                 <TableCell className={stickyCheckboxCell()}>
                   <Checkbox checked={selected.has(g.id)} onCheckedChange={() => toggle(g.id)} aria-label={`Select ${g.display_name ?? g.email}`} />
                 </TableCell>
-                <TableCell className={stickyCell('left-10', 'max-w-64')}>
+                <TableCell className={stickyCell('left-10', IDENTITY_COL)}>
                   <Link href={`/guests/${g.id}`} className="flex min-w-0 flex-col outline-none hover:underline focus-visible:underline">
-                    <span className="flex items-center gap-2 font-medium">
-                      <span className="truncate" title={g.display_name ?? g.email ?? undefined}>
+                    <span className="flex min-w-0 items-center gap-2 font-medium">
+                      <span className="min-w-0 truncate" title={g.display_name ?? g.email ?? undefined}>
                         {g.display_name ?? g.email}
                       </span>
                       {!g.account_enabled && (
-                        <Badge variant="outline" className="h-4 px-1 text-[10px] text-muted-foreground">
+                        <Badge variant="outline" className="h-4 shrink-0 px-1 text-[10px] text-muted-foreground">
                           disabled
                         </Badge>
                       )}
                       {g.invitation_status === 'PendingAcceptance' && (
-                        <Badge variant="outline" className="h-4 px-1 text-[10px] text-warning">
+                        <Badge variant="outline" className="h-4 shrink-0 px-1 text-[10px] text-warning">
                           pending
                         </Badge>
                       )}
                       <TierBadge tier={privilegeTiers[g.identity_id] ?? null} />
                     </span>
-                    <span className="truncate font-mono text-muted-foreground text-xs" title={g.email ?? undefined}>
+                    <span className="block min-w-0 truncate font-mono text-muted-foreground text-xs" title={g.email ?? undefined}>
                       {g.email}
                     </span>
                   </Link>
                 </TableCell>
-                <TableCell className="max-w-48 truncate font-mono text-xs" title={g.domain ?? undefined}>
+                <TableCell className="min-w-0 max-w-48 truncate pl-3 font-mono text-xs" title={g.domain ?? undefined}>
                   {g.domain}
                 </TableCell>
                 <TableCell>

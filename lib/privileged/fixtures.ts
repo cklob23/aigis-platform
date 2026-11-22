@@ -200,7 +200,7 @@ const P2_IDENTITIES: PrivilegedIdentityRow[] = [
     owner_display_name: 'Pat Sponsor',
     last_reviewed_at: LAST_REVIEW,
     last_activity_at: '2026-11-18T09:00:00.000Z',
-    risk_score: 39,
+    risk_score: 29,
     risk_level: 'medium',
     auth_methods: ['microsoftAuthenticatorAuthenticationMethod'],
     guestRisk: {

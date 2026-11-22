@@ -4,7 +4,7 @@ import { listAllIdentitiesUnpaged, listIdentities, type IdentityFilters } from '
 import { privilegedPagesEnabled } from '@/lib/privileged/capability'
 import { applyCombinedGuestDisplay } from '@/lib/privileged/score'
 import { loadPrivilegedOverlayContexts, privilegedIdentityIdsAmong } from '@/lib/scan/privileged-risk'
-import { causeCountsFromGuests, filterSortPageGuests } from '@/lib/guests/display'
+import { causeCountsFromGuests, filterSortPageGuests, GUEST_EXPORT_PAGE_SIZE_CAP } from '@/lib/guests/display'
 import type { ExternalOrganization, Guest, Identity, Membership, Resource, RiskLevel } from '@/lib/types'
 import type { OwnerGuest } from '@/lib/identity/owner'
 import { RISK_CAUSES, type RiskCauseKey } from '@/lib/risk/recommendation'
@@ -37,10 +37,10 @@ export async function listGuests(tenantId: string, f: GuestFilters, settings?: R
 export async function listMatchingGuests(tenantId: string, f: GuestFilters, settings?: Record<string, unknown> | null) {
   if (!privilegedPagesEnabled(settings)) {
     const guests = await listAllIdentitiesUnpaged(tenantId, f)
-    return filterSortPageGuests(guests, { ...f, page: 1, pageSize: Math.max(guests.length, 1) }).guests
+    return filterSortPageGuests(guests, { ...f, page: 1, pageSize: Math.max(guests.length, 1) }, GUEST_EXPORT_PAGE_SIZE_CAP).guests
   }
   const scored = await guestsWithCombinedScores(tenantId, f, settings)
-  return filterSortPageGuests(scored, { ...f, page: 1, pageSize: Math.max(scored.length, 1) }).guests
+  return filterSortPageGuests(scored, { ...f, page: 1, pageSize: Math.max(scored.length, 1) }, GUEST_EXPORT_PAGE_SIZE_CAP).guests
 }
 
 /** How many guests at a given risk level carry each groupable cause. Guests can appear in more than one group. */

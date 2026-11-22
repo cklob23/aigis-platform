@@ -143,6 +143,7 @@ describe('privilegedDisplayRisk', () => {
     expect(morgan?.risk_level).toBe(scoreFromFactors(morgan?.risk_factors ?? []).level)
     expect(morgan?.risk_score).toBe(29)
     expect(morgan?.risk_level).toBe('medium')
+    expect(privilegedProfileFixture(true, 'id-morgan').riskScore).toBe(29)
     const high = filterSortPageGuests(guests, { risk: 'high', sort: 'risk', page: 1, pageSize: 50 })
     const critical = filterSortPageGuests(guests, { risk: 'critical', sort: 'risk', page: 1, pageSize: 50 })
     expect(high.guests.map((row) => row.display_name)).toContain('Grady Archie')

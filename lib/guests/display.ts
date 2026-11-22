@@ -9,6 +9,10 @@ export type GuestScoreListFilters = {
   pageSize?: number
 }
 
+/** List pages stay at the identities cap. CSV may pass a higher cap to load every match once. */
+export const GUEST_LIST_PAGE_SIZE_CAP = 200
+export const GUEST_EXPORT_PAGE_SIZE_CAP = 10_000
+
 function guestSortValue(guest: Guest, sort: GuestScoreListFilters['sort']) {
   if (sort === 'name') return guest.display_name ?? ''
   if (sort === 'last_sign_in') return guest.last_sign_in_at ?? ''
@@ -16,9 +20,9 @@ function guestSortValue(guest: Guest, sort: GuestScoreListFilters['sort']) {
   return guest.risk_score
 }
 
-export function filterSortPageGuests(guests: Guest[], f: GuestScoreListFilters) {
+export function filterSortPageGuests(guests: Guest[], f: GuestScoreListFilters, maxPageSize = GUEST_LIST_PAGE_SIZE_CAP) {
   const page = Math.max(1, f.page ?? 1)
-  const pageSize = Math.min(10_000, Math.max(1, f.pageSize ?? 50))
+  const pageSize = Math.min(maxPageSize, Math.max(1, f.pageSize ?? 50))
   let next = guests
   if (f.risk && f.risk !== 'all') next = next.filter((guest) => guest.risk_level === f.risk)
   if (f.cause) next = next.filter((guest) => guest.risk_factors.some((factor) => factor.key === f.cause))

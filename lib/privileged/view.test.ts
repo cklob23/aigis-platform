@@ -229,6 +229,10 @@ describe('P2 fixture totals', () => {
     expect(summary.byTierAssignments.t0).toEqual({ holders: 21, permanent: 14, eligible: 13, timeBound: 1 })
     expect(summary.byTierAssignments.t1).toEqual({ holders: 53, permanent: 34, eligible: 31, timeBound: 5 })
     expect(summary.byTierAssignments.t2).toEqual({ holders: 24, permanent: 16, eligible: 27, timeBound: 1 })
+    const detail = privilegedFixture(true)
+    expect(detail.highestRisk.some((row) => row.displayName === 'Northwind-HR-Sync')).toBe(true)
+    expect(detail.highestRisk.some((row) => row.displayName === 'Contoso-HR-Sync')).toBe(false)
+    expect(detail.holders.find((row) => row.identityId === 'id-morgan')?.riskScore).toBe(29)
   })
 
   it('keeps Roles tab counts aligned with Overview Tier 0 mix', () => {
