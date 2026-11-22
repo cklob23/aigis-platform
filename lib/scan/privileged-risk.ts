@@ -3,6 +3,7 @@ import { db } from '@/lib/supabase/admin'
 import type { IdentityClass, IdentityOwnerKind } from '@/lib/types'
 import { fetchAllById } from '@/lib/supabase/page'
 import { parsePrivilegedSettings, privilegedStageEnabled } from '@/lib/privileged/capability'
+import { parseStoredActivations } from '@/lib/privileged/profile'
 import { GLOBAL_ADMIN_TEMPLATE_ID, type PrivilegedRiskContext } from '@/lib/risk/privileged'
 
 type IdentityRow = {
@@ -32,6 +33,7 @@ type AssignmentRow = {
 type RoleRow = {
   id: string
   template_id: string | null
+  display_name: string | null
   privilege_tier: 0 | 1 | 2 | null
   is_privileged: boolean
 }
@@ -85,7 +87,7 @@ export async function loadPrivilegedOverlayContexts(
         .is('removed_at', null),
     ),
     fetchAllById<RoleRow>('directory_roles overlay', () =>
-      supabase.from('directory_roles').select('id,template_id,privilege_tier,is_privileged').eq('tenant_id', tenantId).is('removed_at', null),
+      supabase.from('directory_roles').select('id,template_id,display_name,privilege_tier,is_privileged').eq('tenant_id', tenantId).is('removed_at', null),
     ),
     fetchAllById<AccountRow>('identity_accounts overlay', () =>
       supabase
@@ -121,6 +123,7 @@ export async function loadPrivilegedOverlayContexts(
     const rows = assignments.filter((row) => row.principal_identity_id === identity.id)
     const attrs = (account?.attrs ?? {}) as Record<string, unknown>
     const fetched = Array.isArray(attrs.auth_methods)
+    const activatedRoleKeys = parseStoredActivations(attrs.pim_activations).map((row) => row.roleName)
     byIdentity.set(identity.id, {
       isPrivileged: identity.is_privileged === true,
       identityClass: identity.identity_class,
@@ -136,6 +139,7 @@ export async function loadPrivilegedOverlayContexts(
       hasP1,
       hasP2,
       globalAdminCount: gaCount,
+      activatedRoleKeys,
       assignments: rows.map((row) => {
         const role = roleById.get(row.directory_role_id)
         return {
@@ -145,6 +149,7 @@ export async function loadPrivilegedOverlayContexts(
           privilegeTier: role?.privilege_tier ?? null,
           directoryScopeId: row.directory_scope_id,
           roleTemplateId: role?.template_id ?? null,
+          roleName: role?.display_name ?? null,
           groupOwned: row.member_type === 'group' ? ownersByMs.get(row.principal_ms_object_id) === true : null,
         }
       }),

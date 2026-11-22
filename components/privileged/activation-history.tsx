@@ -7,6 +7,15 @@ function durationLabel(minutes: number | null) {
   return minutes != null ? `${minutes} min` : 'None'
 }
 
+function resultLabel(result: string | null) {
+  if (!result) return 'None'
+  return result.charAt(0).toUpperCase() + result.slice(1)
+}
+
+function ticketLabel(ticket: string | null) {
+  return ticket ?? 'No ticket'
+}
+
 export function ActivationHistory({ activations }: { activations: PrivilegedActivation[] }) {
   return (
     <Card>
@@ -37,8 +46,8 @@ export function ActivationHistory({ activations }: { activations: PrivilegedActi
                   </td>
                   <td className="px-4 py-2.5 font-medium">{row.roleName}</td>
                   <td className="tnum px-4 py-2.5 text-muted-foreground text-xs">{durationLabel(row.durationMinutes)}</td>
-                  <td className="px-4 py-2.5 capitalize text-xs">{row.result ?? 'None'}</td>
-                  <td className="px-4 py-2.5 font-mono text-muted-foreground text-xs">{row.ticket ?? 'None'}</td>
+                  <td className="px-4 py-2.5 text-xs">{resultLabel(row.result)}</td>
+                  <td className="px-4 py-2.5 font-mono text-muted-foreground text-xs">{ticketLabel(row.ticket)}</td>
                   <td className="px-4 py-2.5 text-xs">{activationApprovalLabel(row)}</td>
                 </tr>
               ))}
@@ -60,7 +69,7 @@ export function ActivationHistory({ activations }: { activations: PrivilegedActi
                 <span className="font-mono text-muted-foreground text-xs">{formatDateTimeEt(row.activatedAt)}</span>
               </div>
               <p className="text-muted-foreground text-xs text-pretty">
-                {durationLabel(row.durationMinutes)} · {row.result ?? 'None'} · {row.ticket ?? 'None'} · {activationApprovalLabel(row)}
+                {durationLabel(row.durationMinutes)} · {resultLabel(row.result)} · {ticketLabel(row.ticket)} · {activationApprovalLabel(row)}
               </p>
             </div>
           ))}

@@ -11,7 +11,6 @@ import {
   type PrivilegedIdentityRow,
   type PrivilegedRoleRow,
 } from '@/lib/privileged/view'
-import { TIER_0_DIRECTORY_ROLES } from '@/lib/privileged/tiers'
 import { countGlobalAdmins, privilegedDisplayRisk } from '@/lib/privileged/score'
 import { DAILY_USE_DAYS, DORMANT_ADMIN_DAYS, daysSince, overlayRecommendedAction, recommendAssignmentChange } from '@/lib/risk/privileged'
 
@@ -122,13 +121,15 @@ export function publicActivation(
   }
 }
 
-/** Known names when recorded. Otherwise T0 activations show the two-approver count, never invented names. */
+/** Stored approval text, or recorded names/counts when the row actually has them. */
 export function activationApprovalLabel(row: Pick<PrivilegedActivation, 'roleName' | 'approval' | 'approverNames'>) {
   const names = (row.approverNames ?? []).filter((name) => name.trim().length > 0)
   if (names.length > 0) return names.join(', ')
-  const isTier0 = (TIER_0_DIRECTORY_ROLES as readonly string[]).includes(row.roleName)
-  if (isTier0 && row.approval && /^approved$/i.test(row.approval.trim())) return 'Approved (2 of 2)'
   return row.approval?.trim() || 'None'
+}
+
+export function activatedRoleKeysFromActivations(activations: PrivilegedActivation[]) {
+  return activations.map((row) => row.roleName)
 }
 
 export function parseStoredActivations(value: unknown): PrivilegedActivation[] {
@@ -172,6 +173,7 @@ export function buildPrivilegedProfile(input: {
   requests?: PrivilegedProfileRequest[]
   explanation?: { explanation: string; created_at: string } | null
   now?: number
+  globalAdminCount?: number
 }): PrivilegedIdentityProfile {
   const now = input.now ?? Date.now()
   const identity = input.identity
@@ -225,12 +227,14 @@ export function buildPrivilegedProfile(input: {
     }
   })
 
+  const activations = input.pimAvailable ? (input.activations ?? []).map((row) => publicActivation(row)) : []
   const display = privilegedDisplayRisk({
     identity,
-    assignments: held,
+    assignments: input.assignments,
     roles: input.roles,
     pimAvailable: input.pimAvailable,
-    globalAdminCount: countGlobalAdmins(input.assignments, input.roles),
+    globalAdminCount: input.globalAdminCount ?? countGlobalAdmins(input.assignments, input.roles),
+    activatedRoleKeys: activations.map((row) => row.roleName),
     now,
   })
   const factors = display.factors
@@ -265,7 +269,7 @@ export function buildPrivilegedProfile(input: {
     pimAvailable: input.pimAvailable,
     nextPrivilegedReviewAt: nextPrivilegedReviewDueAt(identity.last_reviewed_at),
     assignments,
-    activations: input.pimAvailable ? (input.activations ?? []).map((row) => publicActivation(row)) : [],
+    activations,
     factors,
     reviews: input.reviews ?? [],
     requests: input.requests ?? [],

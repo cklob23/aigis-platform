@@ -17,7 +17,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
     if (!privilegedPagesEnabled(tenant.settings) || !canViewPrivilegedDetail(session.role)) {
       return { title: 'Privileged identity' }
     }
-    const profile = await getPrivilegedIdentity(tenant.id, session.role, tenant.settings, id, { isDemo: tenant.is_demo })
+    const profile = await getPrivilegedIdentity(tenant.id, session.role, tenant.settings, id, { isDemo: session.demo })
     const name = profile?.displayName ?? profile?.identifier
     return { title: name ? `${name} | Privileged access` : 'Privileged identity' }
   } catch {
@@ -32,7 +32,7 @@ export default async function PrivilegedIdentityPage({ params }: Params) {
   if (!canViewPrivilegedDetail(session.role)) {
     return <PrivilegedDetailDenied />
   }
-  const profile = await getPrivilegedIdentity(tenant.id, session.role, tenant.settings, id, { isDemo: tenant.is_demo })
+  const profile = await getPrivilegedIdentity(tenant.id, session.role, tenant.settings, id, { isDemo: session.demo })
   if (!profile) notFound()
   const aiEnabled = aiExplainEnabled(tenant.settings)
   return <IdentityProfile profile={profile} aiEnabled={aiEnabled} />

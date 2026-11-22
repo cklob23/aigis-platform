@@ -180,6 +180,21 @@ describe('scorePrivilegedOverlay', () => {
     expect(keys(scorePrivilegedOverlay(ctx({ lastReviewedAt: at90plus }), NOW))).not.toContain('privileged_review_overdue')
   })
 
+  it('skips eligible_not_activated when activation history includes the role', () => {
+    const eligiblePra = {
+      assignmentType: 'eligible' as const,
+      memberType: 'direct' as const,
+      privilegeTier: 0 as const,
+      roleTemplateId: 'e8611ab8-c589-4f31-b2e1-something',
+      roleName: 'Privileged Role Administrator',
+      directoryScopeId: '/',
+    }
+    expect(
+      keys(scorePrivilegedOverlay(ctx({ assignments: [eligiblePra], activatedRoleKeys: ['Privileged Role Administrator'] }), NOW)),
+    ).not.toContain('eligible_not_activated')
+    expect(keys(scorePrivilegedOverlay(ctx({ assignments: [eligiblePra] }), NOW))).toContain('eligible_not_activated')
+  })
+
   it('caps overlay at 100', () => {
     const result = scorePrivilegedOverlay(
       ctx({

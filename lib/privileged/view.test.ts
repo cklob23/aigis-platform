@@ -232,7 +232,7 @@ describe('P2 fixture totals', () => {
     const detail = privilegedFixture(true)
     const t0 = detail.roles.filter((row) => row.privilegeTier === 0)
     expect(detail.summary.byTier.t0).toBe(21)
-    expect(t0.find((row) => row.displayName === 'Global Administrator')).toMatchObject({ holderCount: 7, standingCount: 5, eligibleCount: 2 })
+    expect(t0.find((row) => row.displayName === 'Global Administrator')).toMatchObject({ holderCount: 1, standingCount: 1, eligibleCount: 0 })
     expect(t0.reduce((sum, row) => sum + row.standingCount, 0)).toBe(detail.summary.byTierAssignments.t0.permanent)
     expect(t0.reduce((sum, row) => sum + row.eligibleCount, 0)).toBe(detail.summary.byTierAssignments.t0.eligible)
   })

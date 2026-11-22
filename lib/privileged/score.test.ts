@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { privilegedDemoAdeleProfile, privilegedFixture, privilegedProfileFixture } from '@/lib/privileged/fixtures'
-import { privilegedDisplayRisk, countGlobalAdmins } from '@/lib/privileged/score'
+import { gradyGuestFixture, privilegedDemoAdeleProfile, privilegedFixture, privilegedProfileFixture } from '@/lib/privileged/fixtures'
+import { applyCombinedGuestDisplay, privilegedDisplayRisk, countGlobalAdmins } from '@/lib/privileged/score'
 import { scoreFromFactors } from '@/lib/risk/engine'
 
 const NOW = Date.parse('2026-11-21T12:00:00.000Z')
@@ -24,11 +24,13 @@ describe('privilegedDisplayRisk', () => {
     expect(profile.riskLevel).not.toBe('critical')
   })
 
-  it('ignores Adele Admin stored 71 and classifies from overlay factors', () => {
+  it('ignores Adele Admin stored 71 and skips eligible_not_activated after a matching activation', () => {
     const profile = privilegedDemoAdeleProfile(true)
     expect(profile.riskScore).toBe(scoreFromFactors(profile.factors).score)
     expect(profile.riskScore).not.toBe(71)
+    expect(profile.factors.map((f) => f.key)).not.toContain('eligible_not_activated')
     expect(profile.riskLevel).toBe(scoreFromFactors(profile.factors).level)
+    expect(profile.riskScore).toBe(profile.factors.reduce((sum, f) => sum + f.points, 0))
   })
 
   it('matches Adele Vance holders and profile from the same overlay', () => {
@@ -78,6 +80,7 @@ describe('privilegedDisplayRisk', () => {
         owner_kind: profile.ownerKind,
         dedicated_admin: profile.dedicatedAdmin,
         auth_methods: ['microsoftAuthenticatorAuthenticationMethod'],
+        activatedRoleKeys: profile.activations.map((row) => row.roleName),
       },
       assignments: profile.assignments.map((row) => ({
         id: row.id,
@@ -90,6 +93,7 @@ describe('privilegedDisplayRisk', () => {
       roles: profile.assignments.map((row) => ({
         id: row.roleId,
         privilege_tier: row.privilegeTier,
+        display_name: row.roleName,
         template_id: undefined,
       })),
       pimAvailable: true,
@@ -99,4 +103,47 @@ describe('privilegedDisplayRisk', () => {
     expect(again.score).toBe(profile.riskScore)
     expect(again.level).toBe(profile.riskLevel)
   })
+
+  it('combines guest base factors with the privileged overlay for Grady Archie', () => {
+    const profile = privilegedProfileFixture(true, 'id-grady')
+    const holder = privilegedFixture(true, NOW).holders.find((row) => row.identityId === 'id-grady')
+    const guest = gradyGuestFixture()
+    expect(profile.identityClass).toBe('external')
+    expect(profile.factors.some((f) => f.key === 'guest_with_role')).toBe(true)
+    expect(profile.factors.some((f) => f.key === 'no_sponsor')).toBe(true)
+    expect(profile.riskScore).toBe(scoreFromFactors(profile.factors).score)
+    expect(profile.riskScore).toBeLessThan(100)
+    expect(holder?.riskScore).toBe(profile.riskScore)
+    expect(guest.risk_score).toBe(profile.riskScore)
+    expect(guest.risk_level).toBe(profile.riskLevel)
+    expect(guest.risk_factors.map((f) => f.key).sort()).toEqual(profile.factors.map((f) => f.key).sort())
+    expect(profile.riskScore).not.toBe(76)
+  })
+
+  it('leaves unprivileged guest scores unchanged', () => {
+    const guest = gradyGuestFixture()
+    const unprivileged = { ...guest, identity_id: 'id-plain', risk_score: 41, risk_level: 'medium' as const }
+    expect(applyCombinedGuestDisplay(unprivileged, { ...privilegedOverlayForTest(), isPrivileged: false })).toBe(unprivileged)
+    expect(applyCombinedGuestDisplay(unprivileged, null).risk_score).toBe(41)
+  })
 })
+
+function privilegedOverlayForTest() {
+  return {
+    isPrivileged: true,
+    identityClass: 'external' as const,
+    accountKind: 'guest',
+    accountEnabled: true,
+    lastActivityAt: '2026-11-07T00:00:00.000Z',
+    lastReviewedAt: '2026-08-01T00:00:00.000Z',
+    ownerKind: 'none' as const,
+    ownerIdentityId: null,
+    dedicatedAdmin: false,
+    authMethods: ['microsoftAuthenticatorAuthenticationMethod'],
+    authMethodsKnown: true,
+    hasP1: true,
+    hasP2: true,
+    globalAdminCount: 1,
+    assignments: [],
+  }
+}

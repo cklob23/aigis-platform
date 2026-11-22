@@ -2,7 +2,16 @@ import type { ReactNode } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { PrivilegedIdentityProfile } from '@/lib/privileged/profile'
 import { formatDate, formatDateTimeEt, relativeDays } from '@/lib/format'
+import { privilegedReviewDueOverdue } from '@/lib/privileged/view'
 import { cn } from '@/lib/utils'
+
+function nextReviewValue(iso: string | null) {
+  if (!iso) return 'Not scheduled'
+  if (privilegedReviewDueOverdue(iso)) {
+    return <span className="text-warning">Overdue since {formatDate(iso)}</span>
+  }
+  return formatDate(iso)
+}
 
 export function ActivityOwnership({ profile }: { profile: PrivilegedIdentityProfile }) {
   const facts: { label: string; value: ReactNode }[] = [
@@ -24,7 +33,7 @@ export function ActivityOwnership({ profile }: { profile: PrivilegedIdentityProf
     },
     {
       label: 'Next privileged review',
-      value: profile.nextPrivilegedReviewAt ? formatDate(profile.nextPrivilegedReviewAt) : 'Not scheduled',
+      value: nextReviewValue(profile.nextPrivilegedReviewAt),
     },
     { label: 'MFA', value: profile.mfaLabel },
     {

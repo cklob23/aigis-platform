@@ -8,6 +8,9 @@ export const DASHBOARD_SUBTITLE_PRIVILEGED =
 
 export const PRIVILEGED_NAV_LABEL = 'Privileged access'
 
+export const DEMO_TENANT_NAME = 'Northwind Health'
+export const DEMO_TENANT_DOMAIN = 'northwindhealth.com'
+
 export const AZURE_RBAC_COMING_LATER = 'Coming later'
 
 export const AZURE_RBAC_FILTER_PILL = 'Azure RBAC · Coming later'

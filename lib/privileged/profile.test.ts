@@ -49,7 +49,11 @@ describe('privilegedProfileFixture', () => {
     expect(profile.displayName).toBe('Lee Gu')
     expect(profile.pimAvailable).toBe(true)
     expect(profile.activations.length).toBeGreaterThan(0)
-    expect(profile.factors.map((f) => f.key)).toContain('permanent_tier0')
+    expect(profile.factors.map((f) => f.key)).toContain('tier0_role')
+    expect(profile.factors.map((f) => f.key)).toContain('privileged_review_overdue')
+    expect(profile.factors.map((f) => f.key)).not.toContain('permanent_tier0')
+    expect(profile.factors.map((f) => f.key)).not.toContain('eligible_not_activated')
+    expect(profile.assignments.find((row) => row.roleName === 'Privileged Role Administrator')?.state).toBe('eligible')
     expect(JSON.stringify(profile)).not.toMatch(/justification/i)
     expect(JSON.stringify(profile)).not.toContain('Emergency break-glass')
     expect(profile.entraUrl).toContain('AssignedRoles')
@@ -63,13 +67,13 @@ describe('privilegedProfileFixture', () => {
 })
 
 describe('activationApprovalLabel', () => {
-  it('shows Approved (2 of 2) for Tier 0 without inventing names', () => {
+  it('shows the stored approval text without inventing a 2-approver rule', () => {
     expect(
       activationApprovalLabel({ roleName: 'Privileged Role Administrator', approval: 'Approved' }),
-    ).toBe('Approved (2 of 2)')
+    ).toBe('Approved')
     expect(
       activationApprovalLabel({ roleName: 'Global Administrator', approval: 'Approved', approverNames: [] }),
-    ).toBe('Approved (2 of 2)')
+    ).toBe('Approved')
   })
 
   it('uses recorded approver names when present', () => {
@@ -82,7 +86,7 @@ describe('activationApprovalLabel', () => {
     ).toBe('Alex Wilber')
   })
 
-  it('does not upgrade non-Tier 0 approvals', () => {
+  it('falls back to None when no approval was stored', () => {
     expect(activationApprovalLabel({ roleName: 'User Administrator', approval: 'Approved' })).toBe('Approved')
     expect(activationApprovalLabel({ roleName: 'Global Administrator', approval: null })).toBe('None')
   })
@@ -92,12 +96,14 @@ describe('buildPrivilegedProfile', () => {
   it('keeps excluded roles off the assignment list', () => {
     const profile = privilegedProfileFixture(true, 'id-adele')
     expect(profile.assignments.some((row) => row.roleName === 'Directory Readers')).toBe(false)
+    expect(profile.assignments.filter((row) => row.roleName === 'Global Administrator')).toHaveLength(1)
+    expect(profile.assignments.find((row) => row.roleName === 'Global Administrator')?.state).toBe('permanent')
     expect(profile.assignments.some((row) => row.roleName === 'Global Administrator')).toBe(true)
   })
 })
 
 describe('privilegedDemoAdeleProfile', () => {
-  it('uses Contoso Adele Admin demo data without activation justifications', () => {
+  it('uses Northwind Adele Admin demo data without activation justifications', () => {
     const profile = privilegedDemoAdeleProfile(true)
     expect(profile.displayName).toBe('Adele Admin')
     expect(profile.identifier).toBe('adele.admin@contoso.example')
@@ -110,6 +116,7 @@ describe('privilegedDemoAdeleProfile', () => {
     expect(profile.assignments.some((row) => row.recommendedChange === 'reduce_scope')).toBe(false)
     expect(profile.assignments.some((row) => row.roleName === 'Privileged Role Administrator' && row.state === 'eligible')).toBe(true)
     expect(profile.activations.some((row) => row.roleName === 'Privileged Role Administrator')).toBe(true)
+    expect(profile.factors.map((f) => f.key)).not.toContain('eligible_not_activated')
     expect(profile.activations.some((row) => row.roleName === 'Global Administrator')).toBe(false)
     expect(profile.nextPrivilegedReviewAt).toBe('2026-12-11T00:00:00.000Z')
     expect(profile.assignments.some((row) => row.entraUrl?.includes('roleId/'))).toBe(true)

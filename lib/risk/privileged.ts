@@ -61,6 +61,7 @@ export type PrivilegedAssignmentInput = {
   privilegeTier: 0 | 1 | 2 | null
   directoryScopeId?: string | null
   roleTemplateId?: string | null
+  roleName?: string | null
   groupOwned?: boolean | null
 }
 
@@ -82,6 +83,8 @@ export type PrivilegedRiskContext = {
   hasP2: boolean
   globalAdminCount: number
   assignments: PrivilegedAssignmentInput[]
+  /** Role names or template ids that this identity actually activated. */
+  activatedRoleKeys?: string[]
 }
 
 export type PrivilegedOverlayResult = {
@@ -176,12 +179,18 @@ export function scorePrivilegedOverlay(
 
   if (ctx.hasP2) {
     const eligible = ctx.assignments.filter((row) => row.assignmentType === 'eligible' && row.privilegeTier != null)
-    const hasUnactivated = eligible.some(
-      (row) =>
-        !ctx.assignments.some(
-          (other) => other.assignmentType === 'active' && other.privilegeTier === row.privilegeTier && other.roleTemplateId === row.roleTemplateId,
-        ),
-    )
+    const activated = new Set((ctx.activatedRoleKeys ?? []).map((key) => key.toLowerCase()))
+    const hasUnactivated = eligible.some((row) => {
+      const currentlyActive = ctx.assignments.some(
+        (other) =>
+          other.assignmentType === 'active' &&
+          other.privilegeTier === row.privilegeTier &&
+          other.roleTemplateId === row.roleTemplateId,
+      )
+      if (currentlyActive) return false
+      const keys = [row.roleTemplateId, row.roleName].filter((key): key is string => Boolean(key)).map((key) => key.toLowerCase())
+      return !keys.some((key) => activated.has(key))
+    })
     if (hasUnactivated) add(factors, 'eligible_not_activated', 'PIM-eligible but not activated')
   }
 

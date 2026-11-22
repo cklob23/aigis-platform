@@ -1,4 +1,5 @@
-import type { IdentityClass, IdentityOwnerKind, RiskLevel } from '@/lib/types'
+import type { IdentityClass, IdentityOwnerKind, RiskFactor, RiskLevel } from '@/lib/types'
+import type { PrivilegedGuestRisk } from '@/lib/privileged/score'
 import { DORMANT_ADMIN_DAYS, PRIVILEGED_REVIEW_DAYS, daysSince, privilegedReviewPastCadence } from '@/lib/risk/privileged'
 import { TIER_0_DIRECTORY_ROLES } from '@/lib/privileged/tiers'
 import { tier0RoleDescription } from '@/lib/privileged/copy'
@@ -66,6 +67,11 @@ export type PrivilegedIdentityRow = {
   dedicated_admin?: boolean
   auth_methods?: string[] | null
   app_id?: string | null
+  first_seen_at?: string | null
+  owner_identity_id?: string | null
+  activatedRoleKeys?: string[]
+  guestRisk?: PrivilegedGuestRisk | null
+  storedGuestFactors?: RiskFactor[] | null
 }
 
 export type PrivilegedAssignmentRow = {
@@ -444,6 +450,7 @@ export function buildPrivilegedHolders(
       roles,
       pimAvailable,
       globalAdminCount,
+      activatedRoleKeys: identity.activatedRoleKeys,
       now,
     })
     displayByIdentity.set(identity.id, { score: display.score, level: display.level })

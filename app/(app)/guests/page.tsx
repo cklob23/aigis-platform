@@ -13,6 +13,8 @@ import { Pagination } from '@/components/layout/pagination'
 import { guestsEmptyCopy } from '@/lib/guests-empty-copy'
 import { privilegedPagesEnabled } from '@/lib/privileged/capability'
 import { getIdentityPrivilegeTiers } from '@/lib/data/privileged'
+import { applyCombinedGuestDisplay } from '@/lib/privileged/score'
+import { loadPrivilegedOverlayContexts } from '@/lib/scan/privileged-risk'
 
 export const metadata = { title: 'External identities' }
 
@@ -50,6 +52,11 @@ export default async function GuestsPage({ searchParams }: { searchParams: Promi
         guests.map((g) => g.identity_id).filter(Boolean),
       )
     : {}
+  let scoredGuests = guests
+  if (privilegedEnabled && Object.keys(privilegeTiers).length > 0) {
+    const overlayByIdentity = await loadPrivilegedOverlayContexts(tenant.id, tenant.settings)
+    scoredGuests = guests.map((guest) => applyCombinedGuestDisplay(guest, overlayByIdentity.get(guest.identity_id) ?? null))
+  }
   const exportParams = new URLSearchParams(Object.entries(sp).filter(([, v]) => v) as [string, string][])
   exportParams.set('type', 'guests')
 
@@ -61,7 +68,7 @@ export default async function GuestsPage({ searchParams }: { searchParams: Promi
       </Suspense>
       {groupedRisk && causeCounts && <CauseGroups risk={groupedRisk} counts={causeCounts} total={total} activeCause={cause} params={sp} />}
       <GuestTable
-        guests={guests}
+        guests={scoredGuests}
         canReview={can(session.role, 'review.create')}
         canExport={can(session.role, 'export')}
         exportHref={`/api/export?${exportParams.toString()}`}
