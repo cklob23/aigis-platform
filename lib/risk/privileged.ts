@@ -85,6 +85,8 @@ export type PrivilegedRiskContext = {
   assignments: PrivilegedAssignmentInput[]
   /** Role names or template ids that this identity actually activated. */
   activatedRoleKeys?: string[]
+  /** Guest sponsor. When false, skip overlay no_owner (no_sponsor already applies). */
+  hasSponsor?: boolean
 }
 
 export type PrivilegedOverlayResult = {
@@ -215,7 +217,8 @@ export function scorePrivilegedOverlay(
   }
 
   const hasOwner = Boolean(ctx.ownerIdentityId) || (ctx.ownerKind != null && ctx.ownerKind !== 'none')
-  if (!hasOwner) add(factors, 'no_owner', 'Privileged identity has no owner')
+  const guestMissingSponsor = isGuestPrincipal(ctx) && ctx.hasSponsor === false
+  if (!hasOwner && !guestMissingSponsor) add(factors, 'no_owner', 'Privileged identity has no owner')
 
   if (!ctx.accountEnabled) add(factors, 'disabled_with_role', 'Disabled account still holds a directory role')
 

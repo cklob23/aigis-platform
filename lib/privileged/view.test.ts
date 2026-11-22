@@ -226,6 +226,9 @@ describe('P2 fixture totals', () => {
     expect(summary.reviews.nextDueAt).toBe('2026-12-11T00:00:00.000Z')
     expect(summary.remediationCount).toBe(0)
     expect(summary.findings.find((row) => row.finding_type === 'permanent_tier0')?.title).toBe('Permanent Tier 0 assignment')
+    expect(summary.byTierAssignments.t0).toEqual({ holders: 21, permanent: 14, eligible: 13, timeBound: 1 })
+    expect(summary.byTierAssignments.t1).toEqual({ holders: 53, permanent: 34, eligible: 31, timeBound: 5 })
+    expect(summary.byTierAssignments.t2).toEqual({ holders: 24, permanent: 16, eligible: 27, timeBound: 1 })
   })
 
   it('keeps Roles tab counts aligned with Overview Tier 0 mix', () => {

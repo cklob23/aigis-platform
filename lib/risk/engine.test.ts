@@ -4,6 +4,7 @@ import {
   CLASS_FACTOR_SETS,
   computeIdentityRisk,
   computeRisk,
+  dropOwnerWhenSponsorMissing,
   identityRiskPatch,
   scoreFromFactors,
   type RiskInput,
@@ -162,6 +163,22 @@ describe('computeIdentityRisk', () => {
     )
     expect(piled.score).toBe(100)
     expect(piled.recommendedAction).toBe('review')
+  })
+
+  it('skips privileged no_owner when no_sponsor already applies', () => {
+    const overlay = privilegedStub({
+      isPrivileged: true,
+      identityClass: 'external',
+      accountKind: 'guest',
+      ownerKind: 'none',
+      ownerIdentityId: null,
+      hasSponsor: false,
+      assignments: [{ assignmentType: 'active', memberType: 'direct', privilegeTier: 1 }],
+    })
+    const risk = computeIdentityRisk('external', input({ hasSponsor: false, privileged: overlay }), undefined, NOW)
+    expect(risk.factors.some((f) => f.key === 'no_sponsor')).toBe(true)
+    expect(risk.factors.some((f) => f.key === 'no_owner')).toBe(false)
+    expect(dropOwnerWhenSponsorMissing(risk.factors).some((f) => f.key === 'no_owner')).toBe(false)
   })
 
   it('derives level from the factor sum', () => {

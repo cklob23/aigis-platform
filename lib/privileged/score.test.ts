@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { gradyGuestFixture, privilegedDemoAdeleProfile, privilegedFixture, privilegedProfileFixture } from '@/lib/privileged/fixtures'
+import { gradyGuestFixture, privilegedDemoAdeleProfile, privilegedFixture, privilegedGuestListFixture, privilegedProfileFixture } from '@/lib/privileged/fixtures'
+import { filterSortPageGuests } from '@/lib/guests/display'
 import { applyCombinedGuestDisplay, privilegedDisplayRisk, countGlobalAdmins } from '@/lib/privileged/score'
 import { scoreFromFactors } from '@/lib/risk/engine'
 
@@ -118,6 +119,9 @@ describe('privilegedDisplayRisk', () => {
     expect(guest.risk_level).toBe(profile.riskLevel)
     expect(guest.risk_factors.map((f) => f.key).sort()).toEqual(profile.factors.map((f) => f.key).sort())
     expect(profile.riskScore).not.toBe(76)
+    expect(profile.factors.some((f) => f.key === 'no_owner')).toBe(false)
+    expect(profile.riskScore).toBe(71)
+    expect(profile.riskLevel).toBe('high')
   })
 
   it('leaves unprivileged guest scores unchanged', () => {
@@ -125,6 +129,22 @@ describe('privilegedDisplayRisk', () => {
     const unprivileged = { ...guest, identity_id: 'id-plain', risk_score: 41, risk_level: 'medium' as const }
     expect(applyCombinedGuestDisplay(unprivileged, { ...privilegedOverlayForTest(), isPrivileged: false })).toBe(unprivileged)
     expect(applyCombinedGuestDisplay(unprivileged, null).risk_score).toBe(41)
+  })
+
+  it('filters, sorts, and pages guests from combined scores while leaving unprivileged stored scores', () => {
+    const guests = privilegedGuestListFixture()
+    const grady = guests.find((row) => row.display_name === 'Grady Archie')
+    const jordan = guests.find((row) => row.display_name === 'Jordan Hale')
+    expect(grady?.risk_score).toBe(71)
+    expect(jordan?.risk_score).toBe(41)
+    const high = filterSortPageGuests(guests, { risk: 'high', sort: 'risk', page: 1, pageSize: 50 })
+    const critical = filterSortPageGuests(guests, { risk: 'critical', sort: 'risk', page: 1, pageSize: 50 })
+    expect(high.guests.map((row) => row.display_name)).toContain('Grady Archie')
+    expect(critical.guests.map((row) => row.display_name)).toContain('Fabrikam Vendor')
+    expect(high.guests.map((row) => row.display_name)).not.toContain('Jordan Hale')
+    const paged = filterSortPageGuests(guests, { sort: 'risk', page: 1, pageSize: 4 })
+    expect(paged.guests).toHaveLength(4)
+    expect(paged.guests.map((row) => row.display_name)).toEqual(['Fabrikam Vendor', 'Grady Archie', 'Jordan Hale', 'Sam Ortiz'])
   })
 })
 

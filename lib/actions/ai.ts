@@ -89,6 +89,10 @@ export async function explainIdentityRecommendation(identityId: string): Promise
       factors: profile.factors,
       displayName: profile.displayName ?? profile.email,
       kind: 'privileged',
+      assignments: profile.assignments.map((row) => ({
+        roleName: row.roleName,
+        recommendedChange: row.recommendedChange,
+      })),
     })
 
     mustWrite(

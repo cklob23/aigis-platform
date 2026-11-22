@@ -9,7 +9,7 @@ export const DASHBOARD_SUBTITLE_PRIVILEGED =
 export const PRIVILEGED_NAV_LABEL = 'Privileged access'
 
 export const DEMO_TENANT_NAME = 'Northwind Health'
-export const DEMO_TENANT_DOMAIN = 'northwindhealth.com'
+export const DEMO_TENANT_DOMAIN = 'northwind.example'
 
 export const AZURE_RBAC_COMING_LATER = 'Coming later'
 
@@ -35,7 +35,7 @@ export const PRIVILEGED_RECOMMENDATION_NOTE =
   'This is a recommendation. A human still has to request and approve any change in Microsoft Entra. AIGIS never changes Entra for privileged access.'
 
 export const PRIVILEGED_REVIEW_SUMMARY =
-  'Confirm the role is still needed with the account owner or a Global Administrator before requesting a change.'
+  'Review the score and any recommended assignment changes with the account owner or a Global Administrator before requesting a change.'
 
 export const OPEN_IN_ENTRA = 'Open in Microsoft Entra'
 

@@ -16,10 +16,12 @@ import { withIdentityId, withMembershipIds } from '@/lib/identity/governance'
 import { loadGovernanceMaps } from '@/lib/identity/governance-maps'
 import { DEFAULT_AI_SETTINGS, type DomainClassification, type RelationshipType, type ResourceType } from '@/lib/types'
 import { PRIVILEGED_READ_PERMISSIONS } from '@/lib/graph/permissions'
+import { DEMO_TENANT_DOMAIN, DEMO_TENANT_NAME } from '@/lib/privileged/copy'
 import {
   CONTOSO_INTERNAL_USERS,
   DEMO_FEATURED_RESOLVED_GUEST,
   DEMO_FEATURED_UNRESOLVED_GUEST,
+  withNorthwindMail,
 } from '@/lib/demo/internal-users'
 import { mustWrite } from '@/lib/supabase/write'
 
@@ -133,7 +135,7 @@ export async function resetDemoTenant() {
 
 export async function ensureDemoUser() {
   const supabase = db()
-  const email = 'demo.admin@northwindhealth.example'
+  const email = `demo.admin@${DEMO_TENANT_DOMAIN}`
   const { data: existing } = await supabase.from('users').select('id').eq('email', email).maybeSingle()
   if (existing) return { id: existing.id as string, email, name: 'Demo Administrator' }
   const { data } = mustWrite(
@@ -165,9 +167,9 @@ async function seedDemoTenant() {
     .insert({
       organization_id: orgId,
       ms_tenant_id: DEMO_MS_TENANT_ID,
-      display_name: 'Northwind Health',
-      primary_domain: 'northwindhealth.com',
-      verified_domains: ['northwindhealth.com', 'northwind.onmicrosoft.com', 'nwh-clinics.org'],
+      display_name: DEMO_TENANT_NAME,
+      primary_domain: DEMO_TENANT_DOMAIN,
+      verified_domains: [DEMO_TENANT_DOMAIN, 'northwind.onmicrosoft.com', 'nwh-clinics.org'],
       connection_status: 'connected',
       consent_granted_at: daysAgo(96),
       onboarding_step: 5,
@@ -248,7 +250,7 @@ async function seedDemoTenant() {
     relationship_type: spec.classification === 'approved_partner' ? 'partner' : spec.classification,
     approval_state: spec.classification === 'blocked' ? 'blocked' : spec.classification === 'unknown' ? 'unreviewed' : spec.classification === 'temporary' ? 'restricted' : 'approved',
     business_owner: spec.owner,
-    business_owner_email: spec.owner ? `${spec.owner.toLowerCase().replace(/\s+/g, '.')}@northwindhealth.com` : null,
+    business_owner_email: spec.owner ? `${spec.owner.toLowerCase().replace(/\s+/g, '.')}@${DEMO_TENANT_DOMAIN}` : null,
     review_date: spec.classification === 'temporary' ? daysAgo(-30 + Math.floor(r() * 90)).slice(0, 10) : null,
     notes: spec.classification === 'blocked' ? 'Contract terminated Q3 2025. All access must be removed.' : null,
     seed_domain_id: domainById.get(spec.domains[0])?.id ?? null,
@@ -274,7 +276,7 @@ async function seedDemoTenant() {
   const internalPlan = planInternalInventory({
     tenantId,
     now: daysAgo(0.2),
-    incoming: CONTOSO_INTERNAL_USERS,
+    incoming: CONTOSO_INTERNAL_USERS.map(withNorthwindMail),
     existing: [],
   })
   mustWrite('identities insert internals', await supabase.from('identities').insert(internalPlan.identities.map((identity) => ({ ...identity, first_seen_at: daysAgo(95) }))))
@@ -282,7 +284,7 @@ async function seedDemoTenant() {
     'identity_accounts insert internals',
     await supabase.from('identity_accounts').insert(internalPlan.accounts.map((account) => ({ ...account, first_seen_at: daysAgo(95) }))),
   )
-  const internalOwners = CONTOSO_INTERNAL_USERS.map((user) => ({
+  const internalOwners = CONTOSO_INTERNAL_USERS.map(withNorthwindMail).map((user) => ({
     id: user.ms_object_id,
     displayName: user.display_name,
     mail: user.email,
@@ -417,7 +419,7 @@ async function seedDemoTenant() {
       jobTitle,
       creationType: 'Invitation',
       domain: d.domain,
-      tenantVerifiedDomains: ['northwindhealth.com', 'northwind.onmicrosoft.com'],
+      tenantVerifiedDomains: [DEMO_TENANT_DOMAIN, 'northwind.onmicrosoft.com'],
       organizationRelationship: org?.relationship_type ?? null,
     })
     const id = crypto.randomUUID()
@@ -482,7 +484,7 @@ async function seedDemoTenant() {
       jobTitle: null,
       creationType: 'Invitation',
       domain: item.domain,
-      tenantVerifiedDomains: ['northwindhealth.com', 'northwind.onmicrosoft.com'],
+      tenantVerifiedDomains: [DEMO_TENANT_DOMAIN, 'northwind.onmicrosoft.com'],
       organizationRelationship: org?.relationship_type ?? null,
     })
     guests.push({

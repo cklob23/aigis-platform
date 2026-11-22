@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { DASHBOARD_SUBTITLE_GUESTS_ONLY, DASHBOARD_SUBTITLE_PRIVILEGED, EXPLAIN_FAILED, PIM_ACTIVATION_NOTE, PRIVILEGED_RECOMMENDATION_NOTE, PRIVILEGED_REVIEW_SUMMARY, REMEDIATION_PLACEHOLDER } from '@/lib/privileged/copy'
+import { DASHBOARD_SUBTITLE_GUESTS_ONLY, DASHBOARD_SUBTITLE_PRIVILEGED, DEMO_TENANT_DOMAIN, EXPLAIN_FAILED, PIM_ACTIVATION_NOTE, PRIVILEGED_RECOMMENDATION_NOTE, PRIVILEGED_REVIEW_SUMMARY, REMEDIATION_PLACEHOLDER } from '@/lib/privileged/copy'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
@@ -23,6 +23,7 @@ describe('dashboard subtitle copy', () => {
     expect(PRIVILEGED_REVIEW_SUMMARY).not.toMatch(/\u2014/)
     expect(EXPLAIN_FAILED).not.toMatch(/\u2014/)
     expect(PRIVILEGED_REVIEW_SUMMARY).toContain('account owner or a Global Administrator')
+    expect(DEMO_TENANT_DOMAIN).toBe('northwind.example')
   })
 
   it('keeps More identity types coming under External identities, not Alerts', () => {

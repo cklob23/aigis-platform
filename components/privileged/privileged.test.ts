@@ -204,7 +204,7 @@ describe('High risk badge contrast', () => {
     expect(src).toContain("high: 'bg-[#FFEDD5] text-[#92400E]")
     expect(src).not.toContain('text-[#B45309]')
     expect(src).not.toContain('text-[#9A3412]')
-    expect(src).toContain("level !== 'high' && level !== 'critical' && 'opacity-80'")
+    expect(src).not.toContain('opacity-80')
     expect(src).toContain('text-[#991B1B]')
   })
 })
@@ -353,7 +353,8 @@ describe('IdentityProfile', () => {
         profile: {
           ...base,
           explanation: {
-            explanation: 'Adele Admin: Confirm the role is still needed.',
+            explanation:
+              'Adele Admin: Review the score and any recommended assignment changes with the account owner or a Global Administrator before requesting a change. Top score factors: Standing (permanent) Tier 0 assignment (+30). Recommended assignment changes: Global Administrator: Convert to eligible.',
             created_at: '2026-11-21T12:00:00.000Z',
           },
         },
@@ -384,6 +385,20 @@ describe('IdentityProfile', () => {
     expect(profile.riskLevel).toBe('critical')
     expect(html).toContain('text-[#991B1B]')
     expect(profile.assignments.filter((row) => row.roleName === 'Global Administrator')).toHaveLength(1)
+  })
+
+  it('scopes overlay queries to identities on the page', () => {
+    const overlay = readFileSync(path.join(root, 'lib/scan/privileged-risk.ts'), 'utf8')
+    expect(overlay).toContain('identityIds?: string[]')
+    expect(overlay).toContain('.in(column, identityIds)')
+    expect(overlay).toContain('privilegedIdentityIdsAmong')
+    const guestsPage = readFileSync(path.join(root, 'app/(app)/guests/page.tsx'), 'utf8')
+    expect(guestsPage).not.toContain('loadPrivilegedOverlayContexts')
+    const guestDetail = readFileSync(path.join(root, 'app/(app)/guests/[id]/page.tsx'), 'utf8')
+    expect(guestDetail).toContain('loadPrivilegedOverlayContexts(tenant.id, tenant.settings, [identity.id])')
+    const list = readFileSync(path.join(root, 'lib/data/guests.ts'), 'utf8')
+    expect(list).toContain('privilegedIdentityIdsAmong')
+    expect(list).toContain('loadPrivilegedOverlayContexts(tenantId, settings, privilegedIds)')
   })
 
 })

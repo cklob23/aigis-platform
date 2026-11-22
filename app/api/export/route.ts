@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
     }
     const all: Awaited<ReturnType<typeof listGuests>>['guests'] = []
     for (let page = 1; page <= 50; page++) {
-      const res = await listGuests(tenant.id, { ...f, page })
+      const res = await listGuests(tenant.id, { ...f, page }, tenant.settings)
       all.push(...res.guests)
       if (all.length >= res.total) break
     }

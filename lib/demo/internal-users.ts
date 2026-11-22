@@ -12,6 +12,15 @@ export type ContosoInternalUser = {
   is_manager: boolean
 }
 
+/** Privileged demo and seed display mail. Graph catalog fixtures keep @contoso.example. */
+export function withNorthwindMail<T extends { email: string; upn: string }>(user: T): T {
+  return {
+    ...user,
+    email: user.email.replace(/@contoso\.example$/i, '@northwind.example'),
+    upn: user.upn.replace(/@contoso\.example$/i, '@northwind.example'),
+  }
+}
+
 export const CONTOSO_INTERNAL_USERS: ContosoInternalUser[] = [
   {
     ms_object_id: '11111111-1111-1111-1111-111111111101',

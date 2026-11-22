@@ -6,7 +6,7 @@ import {
   type PrivilegedAssignmentInput,
   type PrivilegedRiskContext,
 } from '@/lib/risk/privileged'
-import { computeIdentityRisk, DEFAULT_RISK_POLICY, scoreFromFactors, type RiskInput } from '@/lib/risk/engine'
+import { computeIdentityRisk, DEFAULT_RISK_POLICY, dropOwnerWhenSponsorMissing, scoreFromFactors, type RiskInput } from '@/lib/risk/engine'
 
 const OVERLAY_FACTOR_KEYS = new Set(Object.keys(OVERLAY_POINTS))
 
@@ -100,6 +100,7 @@ export function privilegedOverlayContext(
     hasP2: opts.pimAvailable,
     globalAdminCount: opts.globalAdminCount,
     activatedRoleKeys: opts.activatedRoleKeys ?? identity.activatedRoleKeys ?? [],
+    hasSponsor: identity.guestRisk?.hasSponsor,
     assignments: assignments
       .filter((row) => row.principal_identity_id === identity.id)
       .map((row) => {
@@ -166,7 +167,7 @@ function combineStoredGuestFactors(
 ): { factors: RiskFactor[]; score: number; level: RiskLevel } {
   const base = stored.filter((factor) => !OVERLAY_FACTOR_KEYS.has(factor.key))
   const overlayFactors = overlay.isPrivileged ? scorePrivilegedOverlay(overlay, now).factors : []
-  const factors = [...base, ...overlayFactors]
+  const factors = dropOwnerWhenSponsorMissing([...base, ...overlayFactors])
   const derived = scoreFromFactors(factors)
   return { factors, score: derived.score, level: derived.level }
 }

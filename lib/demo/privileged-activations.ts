@@ -2,7 +2,7 @@ import { publicActivation, type PrivilegedActivation } from '@/lib/privileged/pr
 
 /** Demo-only PIM activations. Live tenants have no activation table in this PR. */
 export const DEMO_ACTIVATIONS_BY_EMAIL: Record<string, PrivilegedActivation[]> = {
-  'adele.admin@contoso.example': [
+  'adele.admin@northwind.example': [
     publicActivation({
       id: 'act-adele-1',
       roleName: 'Privileged Role Administrator',
@@ -14,7 +14,7 @@ export const DEMO_ACTIVATIONS_BY_EMAIL: Record<string, PrivilegedActivation[]> =
       justification: 'Do not cite this justification',
     }),
   ],
-  'megan.bowen@contoso.example': [
+  'megan.bowen@northwind.example': [
     publicActivation({
       id: 'act-megan-1',
       roleName: 'User Administrator',

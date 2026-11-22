@@ -49,7 +49,7 @@ describe('explainRecommendation', () => {
     })
     expect(out.title).toContain('Review')
     expect(out.body).toContain('Pat Guest')
-    expect(out.body).toContain('No sponsor assigned (+12)')
+    expect(out.body).toContain('Top score factors: No sponsor assigned (+12)')
     expect(out.body).toContain('not an access change')
     expect(out.citations.map((c) => c.key)).toEqual(['no_sponsor', 'domain_unknown'])
   })
@@ -77,6 +77,30 @@ describe('explainRecommendation', () => {
     expect(out.body).not.toContain('sponsor')
     expect(out.body).not.toContain('Graph')
     expect(out.body).not.toContain('Emergency break-glass')
+    expect(out.body).toContain('Top score factors:')
+    expect(out.body).toContain('Standing (permanent) Tier 0 assignment (+30)')
+  })
+
+  it('names assignment changes that need action and never asks to confirm Keep', () => {
+    const out = explainRecommendation({
+      recommendedAction: 'review',
+      displayName: 'Adele Admin',
+      kind: 'privileged',
+      factors: [
+        { key: 'permanent_tier0', label: 'Standing (permanent) Tier 0 assignment', points: 30 },
+        { key: 'tier0_role', label: 'Holds a Tier 0 directory role', points: 25 },
+        { key: 'no_owner', label: 'Privileged identity has no owner', points: 10 },
+      ],
+      assignments: [
+        { roleName: 'Global Administrator', recommendedChange: 'convert_to_eligible' },
+        { roleName: 'Privileged Role Administrator', recommendedChange: null },
+      ],
+    })
+    expect(out.body).toContain('Top score factors:')
+    expect(out.body).toContain('Global Administrator: Convert to eligible')
+    expect(out.body).not.toContain('Privileged Role Administrator')
+    expect(out.body).not.toMatch(/confirm the role/i)
+    expect(out.body).not.toContain('Keep')
   })
 })
 

@@ -34,7 +34,7 @@ export default async function GuestDetailPage({ params }: { params: Promise<{ id
   const { guest: storedGuest, identity, ownerGuest, memberships, activity, history, reviews, remediations, domain, organization, explanation } = data
   const overlay =
     identity?.is_privileged && privilegedPagesEnabled(tenant.settings)
-      ? overlayForIdentity(await loadPrivilegedOverlayContexts(tenant.id, tenant.settings), identity.id)
+      ? overlayForIdentity(await loadPrivilegedOverlayContexts(tenant.id, tenant.settings, [identity.id]), identity.id)
       : null
   const g = applyCombinedGuestDisplay(storedGuest, overlay)
   const aiEnabled = parseAiSettings(tenant.settings).enabled

@@ -106,7 +106,7 @@ describe('privilegedDemoAdeleProfile', () => {
   it('uses Northwind Adele Admin demo data without activation justifications', () => {
     const profile = privilegedDemoAdeleProfile(true)
     expect(profile.displayName).toBe('Adele Admin')
-    expect(profile.identifier).toBe('adele.admin@contoso.example')
+    expect(profile.identifier).toBe('adele.admin@northwind.example')
     expect(profile.riskScore).toBe(profile.factors.reduce((sum, f) => sum + f.points, 0))
     expect(profile.assignments.filter((row) => row.roleName === 'Global Administrator')).toHaveLength(1)
     expect(profile.assignments.find((row) => row.roleName === 'Global Administrator')?.recommendedChange).toBe(

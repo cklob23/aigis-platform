@@ -1,7 +1,7 @@
 import 'server-only'
 import { db } from '@/lib/supabase/admin'
 import type { IdentityClass, IdentityOwnerKind } from '@/lib/types'
-import { fetchAllById } from '@/lib/supabase/page'
+import { fetchAllById, type RangeQuery } from '@/lib/supabase/page'
 import { parsePrivilegedSettings, privilegedStageEnabled } from '@/lib/privileged/capability'
 import { parseStoredActivations } from '@/lib/privileged/profile'
 import { GLOBAL_ADMIN_TEMPLATE_ID, type PrivilegedRiskContext } from '@/lib/risk/privileged'
@@ -52,15 +52,58 @@ type ResourceRow = {
   owners: unknown
 }
 
+function scopedQuery<T>(query: unknown, column: string, identityIds?: string[]) {
+  const next = identityIds
+    ? (query as { in: (column: string, values: string[]) => unknown }).in(column, identityIds)
+    : query
+  return next as RangeQuery<T>
+}
+
+async function countTenantGlobalAdmins(tenantId: string, roles: RoleRow[]): Promise<number> {
+  const gaRoleIds = roles
+    .filter((row) => (row.template_id ?? '').toLowerCase() === GLOBAL_ADMIN_TEMPLATE_ID.toLowerCase())
+    .map((row) => row.id)
+  if (gaRoleIds.length === 0) return 0
+  const supabase = db()
+  const assignments = await fetchAllById<{ principal_identity_id: string | null }>('ga assignments overlay', () =>
+    supabase
+      .from('role_assignments')
+      .select('id,principal_identity_id')
+      .eq('tenant_id', tenantId)
+      .is('removed_at', null)
+      .in('directory_role_id', gaRoleIds) as unknown as RangeQuery<{ principal_identity_id: string | null }>,
+  )
+  return new Set(assignments.map((row) => row.principal_identity_id).filter(Boolean)).size
+}
+
+/** Privileged identity ids that appear in the given set. Does not load the rest of the tenant. */
+export async function privilegedIdentityIdsAmong(tenantId: string, identityIds: string[]): Promise<string[]> {
+  const unique = [...new Set(identityIds.filter(Boolean))]
+  if (unique.length === 0) return []
+  const supabase = db()
+  const rows = await fetchAllById<{ id: string }>('privileged identity ids', () =>
+    scopedQuery(
+      supabase.from('identities').select('id').eq('tenant_id', tenantId).eq('is_privileged', true).is('removed_at', null),
+      'id',
+      unique,
+    ),
+  )
+  return rows.map((row) => row.id)
+}
+
 /**
  * Overlay contexts keyed by identity id. Empty when the privileged flag is off
  * so rescore stays guest-only and previous overlay scores are left in place.
+ * Pass identityIds to load only those identities (guest list/detail), not the
+ * whole tenant. Combined scores are computed in memory; no new SQL column.
  */
 export async function loadPrivilegedOverlayContexts(
   tenantId: string,
   settings: Record<string, unknown> | null | undefined,
+  identityIds?: string[],
 ): Promise<Map<string, PrivilegedRiskContext>> {
   if (!privilegedStageEnabled(settings)) return new Map()
+  if (identityIds && identityIds.length === 0) return new Map()
 
   const supabase = db()
   const parsed = parsePrivilegedSettings(settings)
@@ -69,37 +112,51 @@ export async function loadPrivilegedOverlayContexts(
 
   const [identities, assignments, roles, accounts, resources] = await Promise.all([
     fetchAllById<IdentityRow>('identities overlay', () =>
-      supabase
-        .from('identities')
-        .select(
-          'id,identity_class,status,last_reviewed_at,last_activity_at,owner_kind,owner_identity_id,is_privileged,privilege_tier,first_seen_at',
-        )
-        .eq('tenant_id', tenantId)
-        .is('removed_at', null),
+      scopedQuery(
+        supabase
+          .from('identities')
+          .select(
+            'id,identity_class,status,last_reviewed_at,last_activity_at,owner_kind,owner_identity_id,is_privileged,privilege_tier,first_seen_at',
+          )
+          .eq('tenant_id', tenantId)
+          .is('removed_at', null),
+        'id',
+        identityIds,
+      ),
     ),
     fetchAllById<AssignmentRow>('role_assignments overlay', () =>
-      supabase
-        .from('role_assignments')
-        .select(
-          'id,principal_identity_id,principal_ms_object_id,directory_role_id,assignment_type,member_type,directory_scope_id,first_seen_at',
-        )
-        .eq('tenant_id', tenantId)
-        .is('removed_at', null),
+      scopedQuery(
+        supabase
+          .from('role_assignments')
+          .select(
+            'id,principal_identity_id,principal_ms_object_id,directory_role_id,assignment_type,member_type,directory_scope_id,first_seen_at',
+          )
+          .eq('tenant_id', tenantId)
+          .is('removed_at', null),
+        'principal_identity_id',
+        identityIds,
+      ),
     ),
     fetchAllById<RoleRow>('directory_roles overlay', () =>
       supabase.from('directory_roles').select('id,template_id,display_name,privilege_tier,is_privileged').eq('tenant_id', tenantId).is('removed_at', null),
     ),
     fetchAllById<AccountRow>('identity_accounts overlay', () =>
-      supabase
-        .from('identity_accounts')
-        .select('identity_id,source_object_id,account_kind,enabled,last_activity_at,attrs')
-        .eq('tenant_id', tenantId)
-        .eq('source', 'entra')
-        .is('removed_at', null),
+      scopedQuery(
+        supabase
+          .from('identity_accounts')
+          .select('id,identity_id,source_object_id,account_kind,enabled,last_activity_at,attrs')
+          .eq('tenant_id', tenantId)
+          .eq('source', 'entra')
+          .is('removed_at', null),
+        'identity_id',
+        identityIds,
+      ),
     ),
-    fetchAllById<ResourceRow>('resources overlay owners', () =>
-      supabase.from('resources').select('ms_object_id,owners').eq('tenant_id', tenantId).is('removed_at', null),
-    ),
+    identityIds
+      ? Promise.resolve([] as ResourceRow[])
+      : fetchAllById<ResourceRow>('resources overlay owners', () =>
+          supabase.from('resources').select('ms_object_id,owners').eq('tenant_id', tenantId).is('removed_at', null),
+        ),
   ])
 
   const roleById = new Map(roles.map((row) => [row.id, row]))
@@ -108,14 +165,16 @@ export async function loadPrivilegedOverlayContexts(
     resources.map((row) => [row.ms_object_id, Array.isArray(row.owners) && row.owners.length > 0] as const),
   )
 
-  const gaCount = new Set(
-    assignments
-      .filter((row) => {
-        const role = roleById.get(row.directory_role_id)
-        return (role?.template_id ?? '').toLowerCase() === GLOBAL_ADMIN_TEMPLATE_ID.toLowerCase() && Boolean(row.principal_identity_id)
-      })
-      .map((row) => row.principal_identity_id as string),
-  ).size
+  const gaCount = identityIds
+    ? await countTenantGlobalAdmins(tenantId, roles)
+    : new Set(
+        assignments
+          .filter((row) => {
+            const role = roleById.get(row.directory_role_id)
+            return (role?.template_id ?? '').toLowerCase() === GLOBAL_ADMIN_TEMPLATE_ID.toLowerCase() && Boolean(row.principal_identity_id)
+          })
+          .map((row) => row.principal_identity_id as string),
+      ).size
 
   const byIdentity = new Map<string, PrivilegedRiskContext>()
   for (const identity of identities) {

@@ -1,7 +1,7 @@
 import type { Guest, IdentityClass, RiskLevel } from '@/lib/types'
 import { OVERLAY_POINTS } from '@/lib/risk/privileged'
 import { applyCombinedGuestDisplay, privilegedOverlayContext } from '@/lib/privileged/score'
-import { CONTOSO_INTERNAL_USERS } from '@/lib/demo/internal-users'
+import { CONTOSO_INTERNAL_USERS, withNorthwindMail } from '@/lib/demo/internal-users'
 import { DEMO_ACTIVATIONS_BY_EMAIL } from '@/lib/demo/privileged-activations'
 import {
   EXCLUDED_TEMPLATE_IDS,
@@ -201,6 +201,15 @@ const P2_IDENTITIES: PrivilegedIdentityRow[] = [
     risk_score: 64,
     risk_level: 'high',
     auth_methods: [],
+    guestRisk: {
+      invitationStatus: 'Accepted',
+      createdAt: '2025-06-01T00:00:00.000Z',
+      lastSignInAt: '2026-06-01T00:00:00.000Z',
+      hasSponsor: false,
+      sponsorEnabled: null,
+      domainClassification: 'vendor',
+      memberships: [],
+    },
   }),
 ]
 
@@ -339,7 +348,7 @@ const P2_FINDINGS: PrivilegedFindingCount[] = [
   {
     finding_type: 'permanent_tier0',
     title: 'Permanent Tier 0 assignment',
-    count: 10,
+    count: 14,
     explanation: 'Permanent Tier 0 assignment while PIM is available.',
   },
   {
@@ -379,8 +388,8 @@ const P2_ROLE_STATS: Record<string, RoleStat> = {
   'Privileged Role Administrator': { holders: 2, permanent: 1, eligible: 1, lastReviewAt: PRA_REVIEW },
   'Privileged Authentication Administrator': { holders: 2, permanent: 1, eligible: 1, lastReviewAt: LAST_REVIEW },
   'Conditional Access Administrator': { holders: 3, permanent: 1, eligible: 2, lastReviewAt: LAST_REVIEW },
-  'Application Administrator': { holders: 4, permanent: 2, eligible: 1, lastReviewAt: null },
-  'Cloud Application Administrator': { holders: 3, permanent: 1, eligible: 2, lastReviewAt: null },
+  'Application Administrator': { holders: 4, permanent: 5, eligible: 2, lastReviewAt: null },
+  'Cloud Application Administrator': { holders: 3, permanent: 2, eligible: 3, lastReviewAt: null },
   'Hybrid Identity Administrator': { holders: 2, permanent: 1, eligible: 1, lastReviewAt: LAST_REVIEW },
   'Directory Synchronization Accounts': { holders: 1, permanent: 1, eligible: 0, lastReviewAt: LAST_REVIEW },
   'Domain Name Administrator': { holders: 1, permanent: 0, eligible: 1, lastReviewAt: null },
@@ -444,7 +453,7 @@ function p2Summary(computed: PrivilegedSummary): PrivilegedSummary {
       non_human: 4,
     },
     byTierAssignments: {
-      t0: { holders: 21, permanent: 10, eligible: 11, timeBound: 1 },
+      t0: { holders: 21, permanent: 14, eligible: 13, timeBound: 1 },
       t1: { holders: 53, permanent: 34, eligible: 31, timeBound: 5 },
       t2: { holders: 24, permanent: 16, eligible: 27, timeBound: 1 },
     },
@@ -597,7 +606,7 @@ export function privilegedProfileFixture(
 
 /** Northwind demo Adele Admin: standing GA and eligible Privileged Role Administrator. */
 export function privilegedDemoAdeleProfile(pimAvailable = true): PrivilegedIdentityProfile {
-  const adele = CONTOSO_INTERNAL_USERS[1]!
+  const adele = withNorthwindMail(CONTOSO_INTERNAL_USERS[1]!)
   const identityId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
   const roles = pimAvailable ? P2_ROLES : FABRIKAM_ROLES
   const assignments = [
@@ -688,4 +697,114 @@ export function gradyGuestFixture(storedScore = 76): Guest {
     globalAdminCount: 1,
   })
   return applyCombinedGuestDisplay(stored, overlay, NOW)
+}
+
+function unprivilegedGuest(over: Partial<Guest> & Pick<Guest, 'id' | 'identity_id' | 'display_name' | 'email' | 'domain' | 'risk_score' | 'risk_level'>): Guest {
+  return {
+    tenant_id: 'tenant-northwind',
+    ms_object_id: `ms-${over.identity_id}`,
+    upn: over.email,
+    external_domain_id: null,
+    company_name: over.domain,
+    company_source: 'graph',
+    account_enabled: true,
+    invitation_status: 'Accepted',
+    user_type: 'Guest',
+    created_at_ms: '2025-06-01T00:00:00.000Z',
+    last_sign_in_at: '2026-11-01T00:00:00.000Z',
+    last_non_interactive_sign_in_at: null,
+    auth_methods: ['microsoftAuthenticatorAuthenticationMethod'],
+    sponsor_ms_object_id: 'sponsor-1',
+    sponsor_display_name: 'Pat Sponsor',
+    sponsor_email: 'pat@northwind.example',
+    sponsor_enabled: true,
+    identity_class: 'external',
+    external_type: 'b2b_guest',
+    classification_evidence: [],
+    external_organization_id: null,
+    risk_factors: [{ key: 'stale', label: 'Stale guest', points: over.risk_score }],
+    recommended_action: 'review',
+    review_status: 'never_reviewed',
+    last_reviewed_at: LAST_REVIEW,
+    first_seen_at: '2025-06-01T00:00:00.000Z',
+    last_seen_at: '2026-11-01T00:00:00.000Z',
+    removed_at: null,
+    ...over,
+  }
+}
+
+export function vendorGuestFixture(storedScore = 64): Guest {
+  const profile = privilegedProfileFixture(true, 'id-vendor')
+  const overlayKeys = new Set(Object.keys(OVERLAY_POINTS))
+  const storedFactors = profile.factors.filter((factor) => !overlayKeys.has(factor.key))
+  const identity = P2_IDENTITIES.find((row) => row.id === 'id-vendor')
+  if (!identity) throw new Error('fixture identity id-vendor missing')
+  const stored: Guest = {
+    id: 'guest-id-vendor',
+    tenant_id: 'tenant-northwind',
+    identity_id: 'id-vendor',
+    ms_object_id: 'ms-id-vendor',
+    display_name: 'Fabrikam Vendor',
+    email: 'vendor@fabrikam.example',
+    upn: 'vendor@fabrikam.example',
+    domain: 'fabrikam.example',
+    external_domain_id: null,
+    company_name: 'Fabrikam',
+    company_source: 'graph',
+    account_enabled: true,
+    invitation_status: 'Accepted',
+    user_type: 'Guest',
+    created_at_ms: '2025-06-01T00:00:00.000Z',
+    last_sign_in_at: '2026-06-01T00:00:00.000Z',
+    last_non_interactive_sign_in_at: null,
+    auth_methods: [],
+    sponsor_ms_object_id: null,
+    sponsor_display_name: null,
+    sponsor_email: null,
+    sponsor_enabled: null,
+    identity_class: 'external',
+    external_type: 'b2b_guest',
+    classification_evidence: [],
+    external_organization_id: null,
+    risk_score: storedScore,
+    risk_level: 'high',
+    risk_factors: storedFactors,
+    recommended_action: 'review',
+    review_status: 'never_reviewed',
+    last_reviewed_at: null,
+    first_seen_at: '2025-06-01T00:00:00.000Z',
+    last_seen_at: '2026-06-01T00:00:00.000Z',
+    removed_at: null,
+  }
+  const overlay = privilegedOverlayContext(identity, P2_ASSIGNMENTS, P2_ROLES, {
+    pimAvailable: true,
+    globalAdminCount: 1,
+  })
+  return applyCombinedGuestDisplay(stored, overlay, NOW)
+}
+
+/** Four-row External identities list: two privileged guests plus two stored-score unprivileged guests. */
+export function privilegedGuestListFixture(): Guest[] {
+  return [
+    gradyGuestFixture(),
+    vendorGuestFixture(),
+    unprivilegedGuest({
+      id: 'guest-jordan',
+      identity_id: 'id-jordan',
+      display_name: 'Jordan Hale',
+      email: 'jordan.hale@meridianlaw.com',
+      domain: 'meridianlaw.com',
+      risk_score: 41,
+      risk_level: 'medium',
+    }),
+    unprivilegedGuest({
+      id: 'guest-sam',
+      identity_id: 'id-sam',
+      display_name: 'Sam Ortiz',
+      email: 'sam.ortiz@nimbusdesign.studio',
+      domain: 'nimbusdesign.studio',
+      risk_score: 22,
+      risk_level: 'low',
+    }),
+  ]
 }
