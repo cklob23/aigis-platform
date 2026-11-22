@@ -21,12 +21,22 @@ export function daysBetween(iso: string | null | undefined) {
   return Math.floor((Date.now() - new Date(iso).getTime()) / DAY)
 }
 
+const DATE_OPTS: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}(?:T00:00:00(?:\.\d+)?(?:Z|[+-]00:00))?$/
+
+function isUtcCalendarDate(iso: string, d: Date) {
+  if (DATE_ONLY.test(iso)) return true
+  return d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0
+}
+
 export function formatDate(iso: string | null | undefined, withTime = false) {
   if (!iso) return '—'
   const d = new Date(iso)
-  return withTime
-    ? d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
-    : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  if (Number.isNaN(d.getTime())) return '—'
+  if (withTime) {
+    return d.toLocaleString('en-US', { ...DATE_OPTS, hour: 'numeric', minute: '2-digit' })
+  }
+  return d.toLocaleDateString('en-US', isUtcCalendarDate(iso, d) ? { ...DATE_OPTS, timeZone: 'UTC' } : DATE_OPTS)
 }
 
 /** Relative last-checked label. Hover title is local time plus the viewer's zone abbreviation. */
