@@ -39,6 +39,24 @@ export function formatDate(iso: string | null | undefined, withTime = false) {
   return d.toLocaleDateString('en-US', isUtcCalendarDate(iso, d) ? { ...DATE_OPTS, timeZone: 'UTC' } : DATE_OPTS)
 }
 
+const ET = 'America/New_York'
+
+/** Clock times on privileged profile surfaces. Always Eastern Time, labeled ET. Date-only values still use formatDate. */
+export function formatDateTimeEt(iso: string | null | undefined) {
+  if (!iso) return 'None'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return 'None'
+  const stamp = d.toLocaleString('en-US', {
+    timeZone: ET,
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+  return `${stamp} ET`
+}
+
 /** Relative last-checked label. Hover title is local time plus the viewer's zone abbreviation. */
 export function formatCheckedAt(iso: string, now = new Date()): { label: string; title: string } {
   const then = new Date(iso)

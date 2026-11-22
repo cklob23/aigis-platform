@@ -1,7 +1,9 @@
-import type { IdentityClass, RiskLevel } from '@/lib/types'
+import type { IdentityClass, IdentityOwnerKind, RiskFactor, RiskLevel } from '@/lib/types'
+import type { PrivilegedGuestRisk } from '@/lib/privileged/score'
 import { DORMANT_ADMIN_DAYS, PRIVILEGED_REVIEW_DAYS, daysSince, privilegedReviewPastCadence } from '@/lib/risk/privileged'
 import { TIER_0_DIRECTORY_ROLES } from '@/lib/privileged/tiers'
 import { tier0RoleDescription } from '@/lib/privileged/copy'
+import { countGlobalAdmins, privilegedDisplayRisk } from '@/lib/privileged/score'
 
 export type PrivilegedAssignmentState = 'permanent' | 'eligible' | 'time_bound' | 'activated' | 'active'
 
@@ -61,9 +63,15 @@ export type PrivilegedIdentityRow = {
   risk_level: RiskLevel
   status: string
   owner_display_name?: string | null
+  owner_kind?: IdentityOwnerKind | null
   dedicated_admin?: boolean
   auth_methods?: string[] | null
   app_id?: string | null
+  first_seen_at?: string | null
+  owner_identity_id?: string | null
+  activatedRoleKeys?: string[]
+  guestRisk?: PrivilegedGuestRisk | null
+  storedGuestFactors?: RiskFactor[] | null
 }
 
 export type PrivilegedAssignmentRow = {
@@ -221,11 +229,25 @@ export function privilegedClassLabel(identityClass: IdentityClass, dedicatedAdmi
   return IDENTITY_CLASS_LABEL[identityClass]
 }
 
+const AUTH_METHOD_LABELS: Record<string, string> = {
+  microsoftAuthenticatorAuthenticationMethod: 'Microsoft Authenticator',
+  passwordAuthenticationMethod: 'Password',
+  phoneAuthenticationMethod: 'Phone',
+  fido2AuthenticationMethod: 'FIDO2',
+  windowsHelloForBusinessAuthenticationMethod: 'Windows Hello',
+  softwareOathAuthenticationMethod: 'Authenticator app (OATH)',
+  hardwareOathAuthenticationMethod: 'Hardware OATH',
+  emailAuthenticationMethod: 'Email',
+  certificateBasedAuthenticationMethod: 'Certificate',
+}
+
 export function mfaMethodLabel(identityClass: IdentityClass, methods: string[] | null | undefined): string {
   if (identityClass === 'non_human' || identityClass === 'group' || identityClass === 'agent') return 'n/a'
-  if (methods == null) return '—'
+  if (methods == null) return 'None'
   if (methods.length === 0) return 'None'
-  return 'Yes'
+  return methods
+    .map((method) => AUTH_METHOD_LABELS[method] ?? method.replace(/AuthenticationMethod$/, ''))
+    .join(', ')
 }
 
 export function emptyClassCounts(): Record<IdentityClass, number> {
@@ -415,9 +437,24 @@ export function buildPrivilegedHolders(
   roles: PrivilegedRoleRow[],
   pimAvailable: boolean,
   topFactorByIdentity: Record<string, string> = {},
+  now = Date.now(),
 ): PrivilegedHolder[] {
   const roleById = new Map(roles.map((row) => [row.id, row]))
   const identityById = new Map(identities.filter((row) => row.is_privileged).map((row) => [row.id, row]))
+  const globalAdminCount = countGlobalAdmins(assignments, roles)
+  const displayByIdentity = new Map<string, { score: number; level: RiskLevel }>()
+  for (const identity of identityById.values()) {
+    const display = privilegedDisplayRisk({
+      identity,
+      assignments,
+      roles,
+      pimAvailable,
+      globalAdminCount,
+      activatedRoleKeys: identity.activatedRoleKeys,
+      now,
+    })
+    displayByIdentity.set(identity.id, { score: display.score, level: display.level })
+  }
 
   type Group = {
     identity: PrivilegedIdentityRow
@@ -460,8 +497,8 @@ export function buildPrivilegedHolders(
       roleName: group.roleName,
       lastActivityAt: identity.last_activity_at,
       lastReviewedAt: identity.last_reviewed_at,
-      riskScore: identity.risk_score,
-      riskLevel: identity.risk_level,
+      riskScore: displayByIdentity.get(identity.id)?.score ?? identity.risk_score,
+      riskLevel: displayByIdentity.get(identity.id)?.level ?? identity.risk_level,
       status: identity.status,
       ownerDisplayName: identity.owner_display_name ?? null,
       mfaLabel: mfaMethodLabel(identity.identity_class, identity.auth_methods),

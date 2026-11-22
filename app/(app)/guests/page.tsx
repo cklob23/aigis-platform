@@ -38,9 +38,9 @@ export default async function GuestsPage({ searchParams }: { searchParams: Promi
   const groupedRisk = filters.risk === 'high' || filters.risk === 'critical' ? filters.risk : null
   const privilegedEnabled = privilegedPagesEnabled(tenant.settings)
   const [{ guests, total, page, pageSize }, domains, causeCounts, scopeCounts] = await Promise.all([
-    listGuests(tenant.id, filters),
+    listGuests(tenant.id, filters, tenant.settings),
     getGuestDomains(tenant.id),
-    groupedRisk ? getCauseCounts(tenant.id, groupedRisk) : Promise.resolve(null),
+    groupedRisk ? getCauseCounts(tenant.id, groupedRisk, tenant.settings) : Promise.resolve(null),
     getReviewScopeCounts(tenant.id),
   ])
   const workflow = reviewWorkflowOf(tenant.settings)

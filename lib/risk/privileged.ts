@@ -42,7 +42,11 @@ export const OVERLAY_POINTS = {
   disabled_with_role: 15,
   privileged_review_overdue: 10,
   not_reviewed_flag: 10,
+  active_tier0_unknown: 30,
 } as const
+
+export const ACTIVE_TIER0_UNKNOWN_LABEL =
+  'Active Tier 0 assignment (P2 needed to tell permanent from eligible)'
 
 export const DORMANT_ADMIN_DAYS = 90
 /** Privileged access review cadence. Independent of tenant Review every (days). */
@@ -57,6 +61,7 @@ export type PrivilegedAssignmentInput = {
   privilegeTier: 0 | 1 | 2 | null
   directoryScopeId?: string | null
   roleTemplateId?: string | null
+  roleName?: string | null
   groupOwned?: boolean | null
 }
 
@@ -78,6 +83,10 @@ export type PrivilegedRiskContext = {
   hasP2: boolean
   globalAdminCount: number
   assignments: PrivilegedAssignmentInput[]
+  /** Role names or template ids that this identity actually activated. */
+  activatedRoleKeys?: string[]
+  /** Guest sponsor. When false, skip overlay no_owner (no_sponsor already applies). */
+  hasSponsor?: boolean
 }
 
 export type PrivilegedOverlayResult = {
@@ -153,6 +162,8 @@ export function scorePrivilegedOverlay(
   if (ctx.hasP2) {
     if (standingOfTier(ctx.assignments, 0)) add(factors, 'permanent_tier0', 'Standing (permanent) Tier 0 assignment')
     if (standingOfTier(ctx.assignments, 1)) add(factors, 'permanent_tier1', 'Standing (permanent) Tier 1 assignment')
+  } else if (tiers.has(0)) {
+    add(factors, 'active_tier0_unknown', ACTIVE_TIER0_UNKNOWN_LABEL)
   }
 
   if (isGuestPrincipal(ctx)) add(factors, 'guest_with_role', 'External identity with an admin role')
@@ -170,12 +181,18 @@ export function scorePrivilegedOverlay(
 
   if (ctx.hasP2) {
     const eligible = ctx.assignments.filter((row) => row.assignmentType === 'eligible' && row.privilegeTier != null)
-    const hasUnactivated = eligible.some(
-      (row) =>
-        !ctx.assignments.some(
-          (other) => other.assignmentType === 'active' && other.privilegeTier === row.privilegeTier && other.roleTemplateId === row.roleTemplateId,
-        ),
-    )
+    const activated = new Set((ctx.activatedRoleKeys ?? []).map((key) => key.toLowerCase()))
+    const hasUnactivated = eligible.some((row) => {
+      const currentlyActive = ctx.assignments.some(
+        (other) =>
+          other.assignmentType === 'active' &&
+          other.privilegeTier === row.privilegeTier &&
+          other.roleTemplateId === row.roleTemplateId,
+      )
+      if (currentlyActive) return false
+      const keys = [row.roleTemplateId, row.roleName].filter((key): key is string => Boolean(key)).map((key) => key.toLowerCase())
+      return !keys.some((key) => activated.has(key))
+    })
     if (hasUnactivated) add(factors, 'eligible_not_activated', 'PIM-eligible but not activated')
   }
 
@@ -200,7 +217,8 @@ export function scorePrivilegedOverlay(
   }
 
   const hasOwner = Boolean(ctx.ownerIdentityId) || (ctx.ownerKind != null && ctx.ownerKind !== 'none')
-  if (!hasOwner) add(factors, 'no_owner', 'Privileged identity has no owner')
+  const guestMissingSponsor = isGuestPrincipal(ctx) && ctx.hasSponsor === false
+  if (!hasOwner && !guestMissingSponsor) add(factors, 'no_owner', 'Privileged identity has no owner')
 
   if (!ctx.accountEnabled) add(factors, 'disabled_with_role', 'Disabled account still holds a directory role')
 
@@ -252,6 +270,8 @@ export function recommendAssignmentChange(
   if (ctx.dailyUse && !ctx.dedicatedAdmin && (assignment.privilegeTier === 0 || assignment.privilegeTier === 1)) {
     return 'move_to_dedicated_admin'
   }
+  const isGlobalAdmin = (assignment.roleTemplateId ?? '').toLowerCase() === GLOBAL_ADMIN_TEMPLATE_ID.toLowerCase()
+  if (isGlobalAdmin || assignment.assignmentType === 'eligible') return null
   if ((assignment.directoryScopeId ?? '/') === '/' && assignment.privilegeTier === 0 && ctx.assignmentCount > 1) {
     return 'reduce_scope'
   }

@@ -19,6 +19,9 @@ import { RESOURCE_TYPE_LABELS } from '@/lib/types'
 import { describeRecommendation } from '@/lib/risk/recommendation'
 import { describeOwner, ownerDiffersFromSponsor } from '@/lib/identity/owner'
 import { parseAiSettings } from '@/lib/ai/recommend'
+import { privilegedPagesEnabled } from '@/lib/privileged/capability'
+import { applyCombinedGuestDisplay } from '@/lib/privileged/score'
+import { loadPrivilegedOverlayContexts, overlayForIdentity } from '@/lib/scan/privileged-risk'
 import { ExplainRecommendation } from '@/components/guests/explain-recommendation'
 import { OwnerFact } from '@/components/guests/owner-fact'
 import { cn } from '@/lib/utils'
@@ -28,7 +31,12 @@ export default async function GuestDetailPage({ params }: { params: Promise<{ id
   const { session, tenant } = await requireOnboarded()
   const data = await getGuestDetail(tenant.id, id)
   if (!data) notFound()
-  const { guest: g, identity, ownerGuest, memberships, activity, history, reviews, remediations, domain, organization, explanation } = data
+  const { guest: storedGuest, identity, ownerGuest, memberships, activity, history, reviews, remediations, domain, organization, explanation } = data
+  const overlay =
+    identity?.is_privileged && privilegedPagesEnabled(tenant.settings)
+      ? overlayForIdentity(await loadPrivilegedOverlayContexts(tenant.id, tenant.settings, [identity.id]), identity.id)
+      : null
+  const g = applyCombinedGuestDisplay(storedGuest, overlay)
   const aiEnabled = parseAiSettings(tenant.settings).enabled
   const distinctOwner = ownerDiffersFromSponsor(identity, g)
   const hasSponsor = Boolean(g.sponsor_ms_object_id || g.sponsor_email || g.sponsor_display_name)
@@ -104,7 +112,7 @@ export default async function GuestDetailPage({ params }: { params: Promise<{ id
           <span className="flex flex-col gap-0.5">
             <span>
               Recommended action: <span className="font-medium text-foreground">{recommendation.label}</span>
-              {recommendation.label !== 'Keep' && <span className="text-muted-foreground"> — {recommendation.reason}</span>}
+              {recommendation.label !== 'Keep' && <span className="text-muted-foreground"> · {recommendation.reason}</span>}
             </span>
             <span>
               {memberships.length} resource memberships, {sensitive.length} sensitive.

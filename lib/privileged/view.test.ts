@@ -7,6 +7,7 @@ import {
   combinedStateLabel,
   filterHolders,
   holderIdentifier,
+  mfaMethodLabel,
   groupHoldersByIdentity,
   nextPrivilegedReviewDueAt,
   privilegedReviewDueOverdue,
@@ -225,13 +226,22 @@ describe('P2 fixture totals', () => {
     expect(summary.reviews.nextDueAt).toBe('2026-12-11T00:00:00.000Z')
     expect(summary.remediationCount).toBe(0)
     expect(summary.findings.find((row) => row.finding_type === 'permanent_tier0')?.title).toBe('Permanent Tier 0 assignment')
+    expect(summary.byTierAssignments.t0).toEqual({ holders: 21, permanent: 14, eligible: 13, timeBound: 1 })
+    expect(summary.byTierAssignments.t1).toEqual({ holders: 53, permanent: 34, eligible: 31, timeBound: 5 })
+    expect(summary.byTierAssignments.t2).toEqual({ holders: 24, permanent: 16, eligible: 27, timeBound: 1 })
+    const detail = privilegedFixture(true)
+    expect(detail.highestRisk.some((row) => row.displayName === 'Northwind-HR-Sync')).toBe(true)
+    expect(detail.highestRisk.some((row) => row.displayName === 'Contoso-HR-Sync')).toBe(false)
+    expect(detail.holders.find((row) => row.identityId === 'id-morgan')?.riskScore).toBe(29)
   })
 
   it('keeps Roles tab counts aligned with Overview Tier 0 mix', () => {
     const detail = privilegedFixture(true)
     const t0 = detail.roles.filter((row) => row.privilegeTier === 0)
     expect(detail.summary.byTier.t0).toBe(21)
-    expect(t0.find((row) => row.displayName === 'Global Administrator')).toMatchObject({ holderCount: 7, standingCount: 5, eligibleCount: 2 })
+    expect(t0.find((row) => row.displayName === 'Global Administrator')).toMatchObject({ holderCount: 1, standingCount: 1, eligibleCount: 0 })
+    expect(t0.find((row) => row.displayName === 'Application Administrator')).toMatchObject({ holderCount: 7, standingCount: 5, eligibleCount: 2 })
+    expect(t0.find((row) => row.displayName === 'Cloud Application Administrator')).toMatchObject({ holderCount: 5, standingCount: 2, eligibleCount: 3 })
     expect(t0.reduce((sum, row) => sum + row.standingCount, 0)).toBe(detail.summary.byTierAssignments.t0.permanent)
     expect(t0.reduce((sum, row) => sum + row.eligibleCount, 0)).toBe(detail.summary.byTierAssignments.t0.eligible)
   })
@@ -242,6 +252,7 @@ describe('Fabrikam no-P2 fixture', () => {
     const detail = privilegedFixture(false)
     expect(detail.holders.every((row) => !row.email?.includes('northwind.example'))).toBe(true)
     expect(detail.holders.some((row) => row.email === 'lee.gu@fabrikam.example')).toBe(true)
+    expect(detail.holders.some((row) => row.displayName === 'Northwind-HR-Sync')).toBe(false)
     expect(detail.holders.some((row) => row.displayName === 'Contoso-HR-Sync')).toBe(false)
     expect(detail.summary.holders).toBe(52)
     expect(detail.summary.assignments).toBe(74)
@@ -307,6 +318,14 @@ describe('live reviews stay empty', () => {
     expect(summary.reviews.lastCompletedAt).toBeNull()
     expect(summary.reviews.nextDueAt).toBeNull()
     expect(summary.reviews.openRequests).toBe(0)
+  })
+})
+
+describe('mfaMethodLabel', () => {
+  it('uses None when methods are missing', () => {
+    expect(mfaMethodLabel('human_internal', null)).toBe('None')
+    expect(mfaMethodLabel('human_internal', [])).toBe('None')
+    expect(mfaMethodLabel('non_human', null)).toBe('n/a')
   })
 })
 

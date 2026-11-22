@@ -11,7 +11,7 @@ const _geistMono = Geist_Mono({ subsets: ['latin'] })
 export const metadata: Metadata = {
   title: {
     default: 'AIGIS | Access, Identity & Governance Intelligence System',
-    template: '%s · AIGIS',
+    template: '%s | AIGIS',
   },
   description:
     'External identity governance for Microsoft 365: discover, classify, risk-score, review, and remediate external identities and the organizations behind them across Entra ID, Teams, SharePoint, and enterprise apps.',

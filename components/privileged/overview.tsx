@@ -139,7 +139,7 @@ export function PrivilegedOverview({
                     <TableHead>Class</TableHead>
                     <TableHead>Highest tier</TableHead>
                     <TableHead>Roles</TableHead>
-                    <TableHead>Last sign-in</TableHead>
+                    <TableHead>Last activity</TableHead>
                     <TableHead>Risk</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -244,7 +244,7 @@ function HighestRiskRow({ row }: { row: PrivilegedHighestRisk }) {
   return (
     <TableRow>
       <TableCell>
-        <Link href={`/privileged?tab=holders&q=${encodeURIComponent(row.displayName ?? row.identifier ?? '')}`} className="flex min-w-0 flex-col hover:underline">
+        <Link href={`/privileged/${row.identityId}`} className="flex min-w-0 flex-col hover:underline">
           <span className="font-medium">{row.displayName ?? row.identifier}</span>
           <span className="truncate font-mono text-muted-foreground text-xs">{row.identifier}</span>
         </Link>
@@ -275,7 +275,7 @@ function HighestRiskRow({ row }: { row: PrivilegedHighestRisk }) {
 function HighestRiskStacked({ row }: { row: PrivilegedHighestRisk }) {
   return (
     <div className="flex flex-col gap-2 border-b px-4 py-3 last:border-b-0">
-      <Link href={`/privileged?tab=holders&q=${encodeURIComponent(row.displayName ?? row.identifier ?? '')}`} className="flex min-w-0 flex-col hover:underline">
+      <Link href={`/privileged/${row.identityId}`} className="flex min-w-0 flex-col hover:underline">
         <span className="font-medium">{row.displayName ?? row.identifier}</span>
         <span className="truncate font-mono text-muted-foreground text-xs">{row.identifier}</span>
       </Link>

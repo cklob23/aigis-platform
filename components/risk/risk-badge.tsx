@@ -2,8 +2,8 @@ import { cn } from '@/lib/utils'
 import type { RiskLevel } from '@/lib/types'
 
 const STYLES: Record<RiskLevel, string> = {
-  critical: 'bg-destructive/15 text-destructive ring-destructive/30',
-  high: 'bg-[#FFEDD5] text-[#9A3412] ring-[#FDBA74] dark:bg-warning/15 dark:text-[#FCD34D] dark:ring-warning/40',
+  critical: 'bg-destructive/15 text-[#991B1B] ring-destructive/30 dark:text-[#FECACA] dark:ring-destructive/40',
+  high: 'bg-[#FFEDD5] text-[#92400E] ring-[#FDBA74] dark:bg-warning/15 dark:text-[#FCD34D] dark:ring-warning/40',
   medium: 'bg-primary/10 text-primary ring-primary/25',
   low: 'bg-muted text-muted-foreground ring-border',
 }
@@ -13,7 +13,9 @@ export function RiskBadge({ level, score, className }: { level: RiskLevel; score
     <span className={cn('inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 font-medium text-xs capitalize ring-1 ring-inset', STYLES[level], className)}>
       <span aria-hidden className={cn('size-1.5 rounded-full', level === 'critical' ? 'bg-destructive' : level === 'high' ? 'bg-warning' : level === 'medium' ? 'bg-primary' : 'bg-muted-foreground')} />
       {level}
-      {typeof score === 'number' && <span className="tnum font-mono opacity-80">{score}</span>}
+      {typeof score === 'number' && (
+        <span className="tnum font-mono">{score}</span>
+      )}
     </span>
   )
 }

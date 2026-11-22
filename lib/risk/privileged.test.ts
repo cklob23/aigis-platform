@@ -73,6 +73,7 @@ describe('scorePrivilegedOverlay', () => {
       disabled_with_role: 15,
       privileged_review_overdue: 10,
       not_reviewed_flag: 10,
+      active_tier0_unknown: 30,
     })
   })
 
@@ -88,6 +89,8 @@ describe('scorePrivilegedOverlay', () => {
     expect(keys(result)).not.toContain('permanent_tier0')
     expect(keys(result)).not.toContain('permanent_tier1')
     expect(keys(result)).not.toContain('eligible_not_activated')
+    expect(result.factors.find((f) => f.key === 'active_tier0_unknown')?.label).toContain('P2 needed')
+    expect(points(result, 'active_tier0_unknown')).toBe(30)
   })
 
   it('skips dormant_admin without P1', () => {
@@ -177,6 +180,21 @@ describe('scorePrivilegedOverlay', () => {
     expect(keys(scorePrivilegedOverlay(ctx({ lastReviewedAt: at90plus }), NOW))).not.toContain('privileged_review_overdue')
   })
 
+  it('skips eligible_not_activated when activation history includes the role', () => {
+    const eligiblePra = {
+      assignmentType: 'eligible' as const,
+      memberType: 'direct' as const,
+      privilegeTier: 0 as const,
+      roleTemplateId: 'e8611ab8-c589-4f31-b2e1-something',
+      roleName: 'Privileged Role Administrator',
+      directoryScopeId: '/',
+    }
+    expect(
+      keys(scorePrivilegedOverlay(ctx({ assignments: [eligiblePra], activatedRoleKeys: ['Privileged Role Administrator'] }), NOW)),
+    ).not.toContain('eligible_not_activated')
+    expect(keys(scorePrivilegedOverlay(ctx({ assignments: [eligiblePra] }), NOW))).toContain('eligible_not_activated')
+  })
+
   it('caps overlay at 100', () => {
     const result = scorePrivilegedOverlay(
       ctx({
@@ -224,10 +242,16 @@ describe('recommendAssignmentChange', () => {
     ).toBe('move_to_dedicated_admin')
     expect(
       recommendAssignmentChange(
-        { assignmentType: 'active', memberType: 'direct', privilegeTier: 0, directoryScopeId: '/' },
+        { assignmentType: 'active', memberType: 'direct', privilegeTier: 0, directoryScopeId: '/', roleTemplateId: TIER_0_TEMPLATE_IDS['Application Administrator'] },
         { hasP2: false, accountEnabled: true, dormant: false, guest: false, dailyUse: false, dedicatedAdmin: true, assignmentCount: 2 },
       ),
     ).toBe('reduce_scope')
+    expect(
+      recommendAssignmentChange(
+        { assignmentType: 'eligible', memberType: 'direct', privilegeTier: 0, directoryScopeId: '/', roleTemplateId: GA },
+        { hasP2: true, accountEnabled: true, dormant: false, guest: false, dailyUse: false, dedicatedAdmin: true, assignmentCount: 2 },
+      ),
+    ).toBeNull()
   })
 })
 

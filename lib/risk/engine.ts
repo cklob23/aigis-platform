@@ -38,6 +38,12 @@ export function levelFor(score: number): RiskLevel {
   return 'low'
 }
 
+/** Display score is the sum of the factors shown, capped at 100. */
+export function scoreFromFactors(factors: Array<{ points: number }>): { score: number; level: RiskLevel } {
+  const score = Math.min(100, factors.reduce((sum, factor) => sum + factor.points, 0))
+  return { score, level: levelFor(score) }
+}
+
 export type IdentityRiskResult = {
   score: number
   level: RiskLevel
@@ -73,15 +79,20 @@ export function computeIdentityRisk(
   const base = set === 'external' ? scoreExternal(input, policy, now) : STUB_RESULT
   if (!input.privileged?.isPrivileged) return base
   const overlay = scorePrivilegedOverlay(input.privileged, now)
-  const factors = [...base.factors, ...overlay.factors]
-  const score = Math.min(100, base.score + overlay.score)
-  const level = levelFor(score)
+  const factors = dropOwnerWhenSponsorMissing([...base.factors, ...overlay.factors])
+  const derived = scoreFromFactors(factors)
   return {
-    score,
-    level,
+    score: derived.score,
+    level: derived.level,
     factors,
-    recommendedAction: overlayRecommendedAction(level, base.recommendedAction),
+    recommendedAction: overlayRecommendedAction(derived.level, base.recommendedAction),
   }
+}
+
+/** Skip overlay "no owner" (+10) when guest "no sponsor" (+12) already applies. */
+export function dropOwnerWhenSponsorMissing(factors: RiskFactor[]): RiskFactor[] {
+  if (!factors.some((factor) => factor.key === 'no_sponsor')) return factors
+  return factors.filter((factor) => factor.key !== 'no_owner')
 }
 
 /** Hub columns mirrored from a score. Guest rows also keep risk_factors. */

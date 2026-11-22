@@ -3,7 +3,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_AI_SETTINGS } from '@/lib/types'
-import { explainRecommendation, mergeAiSettings, parseAiSettings } from '@/lib/ai/recommend'
+import { aiExplainEnabled, buildExplainPromptInput, explainRecommendation, mergeAiSettings, parseAiSettings } from '@/lib/ai/recommend'
+import { privilegedDemoAdeleProfile } from '@/lib/privileged/fixtures'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
@@ -29,6 +30,14 @@ describe('mergeAiSettings', () => {
   })
 })
 
+describe('aiExplainEnabled', () => {
+  it('requires the strict true flag', () => {
+    expect(aiExplainEnabled({})).toBe(false)
+    expect(aiExplainEnabled({ ai: { enabled: true } })).toBe(true)
+    expect(aiExplainEnabled({ ai: { enabled: 'true' } })).toBe(false)
+  })
+})
+
 describe('explainRecommendation', () => {
   it('cites factors and stays recommend-only', () => {
     const out = explainRecommendation({
@@ -41,9 +50,92 @@ describe('explainRecommendation', () => {
     })
     expect(out.title).toContain('Review')
     expect(out.body).toContain('Pat Guest')
-    expect(out.body).toContain('No sponsor assigned (+12)')
+    expect(out.body).toContain('Top score factors: No sponsor assigned (+12)')
     expect(out.body).toContain('not an access change')
     expect(out.citations.map((c) => c.key)).toEqual(['no_sponsor', 'domain_unknown'])
+  })
+
+  it('cites privileged factor keys and never includes justification text', () => {
+    const prompt = buildExplainPromptInput({
+      recommendedAction: 'review',
+      displayName: 'Lee Gu',
+      factors: [
+        { key: 'permanent_tier0', label: 'Standing (permanent) Tier 0 assignment', points: 30 },
+        { key: 'tier0_role', label: 'Holds a Tier 0 directory role', points: 25 },
+      ],
+      activations: [{ justification: 'Emergency break-glass for clinic outage', roleName: 'PRA' }],
+    })
+    expect(JSON.stringify(prompt)).not.toMatch(/justification/i)
+    expect(JSON.stringify(prompt)).not.toContain('Emergency break-glass')
+    const out = explainRecommendation({
+      ...prompt,
+      kind: 'privileged',
+      activations: [{ justification: 'Emergency break-glass for clinic outage' }],
+    })
+    expect(out.citations.map((c) => c.key)).toEqual(['permanent_tier0', 'tier0_role'])
+    expect(out.body).toContain('AIGIS never changes anything in Entra')
+    expect(out.body).toContain('account owner or a Global Administrator')
+    expect(out.body).not.toContain('sponsor')
+    expect(out.body).not.toContain('Graph')
+    expect(out.body).not.toContain('Emergency break-glass')
+    expect(out.body).toContain('Top score factors:')
+    expect(out.body).toContain('Standing (permanent) Tier 0 assignment (+30)')
+  })
+
+  it('names assignment changes that need action and never asks to confirm Keep', () => {
+    const out = explainRecommendation({
+      recommendedAction: 'review',
+      displayName: 'Adele Admin',
+      kind: 'privileged',
+      factors: [
+        { key: 'permanent_tier0', label: 'Standing (permanent) Tier 0 assignment', points: 30 },
+        { key: 'tier0_role', label: 'Holds a Tier 0 directory role', points: 25 },
+        { key: 'no_owner', label: 'Privileged identity has no owner', points: 10 },
+      ],
+      assignments: [
+        { roleName: 'Global Administrator', recommendedChange: 'convert_to_eligible' },
+        { roleName: 'Privileged Role Administrator', recommendedChange: null },
+      ],
+    })
+    expect(out.body).toContain('Top score factors:')
+    expect(out.body).toContain('Global Administrator: Convert to eligible')
+    expect(out.body).not.toContain('Privileged Role Administrator')
+    expect(out.body).not.toMatch(/confirm the role/i)
+    expect(out.body).not.toContain('Keep')
+  })
+
+  it('drops zero-point factors from Top score factors', () => {
+    const out = explainRecommendation({
+      recommendedAction: 'review',
+      displayName: 'Lee Gu',
+      kind: 'privileged',
+      factors: [
+        { key: 'tier0_role', label: 'Holds a Tier 0 directory role', points: 25 },
+        { key: 'strong_auth_ok', label: 'Strong authentication registered', points: 0 },
+      ],
+    })
+    expect(out.body).toContain('Top score factors: Holds a Tier 0 directory role (+25).')
+    expect(out.body).not.toContain('(+0)')
+    expect(out.body).not.toContain('Strong authentication registered')
+    expect(out.citations.map((c) => c.key)).toEqual(['tier0_role'])
+  })
+
+  it('drops +0 factors from Adele Admin Top score factors', () => {
+    const profile = privilegedDemoAdeleProfile(true)
+    const out = explainRecommendation({
+      recommendedAction: profile.recommendedAction,
+      factors: profile.factors,
+      displayName: profile.displayName,
+      kind: 'privileged',
+      assignments: profile.assignments.map((row) => ({
+        roleName: row.roleName,
+        recommendedChange: row.recommendedChange,
+      })),
+    })
+    expect(profile.factors.some((factor) => factor.points === 0)).toBe(true)
+    expect(out.body).toContain('Top score factors:')
+    expect(out.body).not.toContain('(+0)')
+    expect(out.citations.every((c) => c.points > 0)).toBe(true)
   })
 })
 
@@ -54,8 +146,18 @@ describe('AI module isolation', () => {
       const src = readFileSync(path.join(root, rel), 'utf8')
       expect(src).not.toMatch(/from ['"]@\/lib\/graph/)
       expect(src).not.toMatch(/from ['"]@\/lib\/actions\/remediation/)
+      expect(src).not.toMatch(/from ['"]@\/lib\/remediation/)
       expect(src).not.toMatch(/import\s*\{[^}]*remediateGuest/)
       expect(src).not.toMatch(/GraphClient/)
     }
+  })
+
+  it('returns before writing when the AI flag is off', () => {
+    const src = readFileSync(path.join(root, 'lib/actions/ai.ts'), 'utf8')
+    expect(src).toMatch(/export async function explainIdentityRecommendation/)
+    expect(src).toMatch(/guest_id: null/)
+    const identityFn = src.slice(src.indexOf('explainIdentityRecommendation'))
+    expect(identityFn.indexOf('aiExplainEnabled')).toBeGreaterThan(-1)
+    expect(identityFn.indexOf('aiExplainEnabled')).toBeLessThan(identityFn.indexOf('recommendation_explanations insert'))
   })
 })

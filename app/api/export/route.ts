@@ -4,7 +4,7 @@ import { can, canExportPrivileged } from '@/lib/auth/rbac'
 import { privilegedPagesEnabled } from '@/lib/privileged/capability'
 import { getPrivilegedDetail } from '@/lib/data/privileged'
 import { ASSIGNMENT_STATE_LABEL, IDENTITY_CLASS_LABEL, TIER_LABEL } from '@/lib/privileged/view'
-import { listGuests, type GuestFilters } from '@/lib/data/guests'
+import { listMatchingGuests, type GuestFilters } from '@/lib/data/guests'
 import { listDomains } from '@/lib/data/domains'
 import { listOrganizations } from '@/lib/data/organizations'
 import { listResources } from '@/lib/data/resources'
@@ -43,12 +43,7 @@ export async function GET(req: NextRequest) {
       page: 1,
       pageSize: 200,
     }
-    const all: Awaited<ReturnType<typeof listGuests>>['guests'] = []
-    for (let page = 1; page <= 50; page++) {
-      const res = await listGuests(tenant.id, { ...f, page })
-      all.push(...res.guests)
-      if (all.length >= res.total) break
-    }
+    const all = await listMatchingGuests(tenant.id, f, tenant.settings)
     body = csv([
       ['Display name', 'Email', 'Domain', 'Company', 'Identity type', 'Account enabled', 'Invitation', 'Created', 'Last sign-in', 'Sponsor', 'Sponsor enabled', 'Risk score', 'Risk level', 'Risk factors', 'Recommended action', 'Review status', 'Last reviewed'],
       ...all.map((g) => [g.display_name, g.email, g.domain, g.company_name, g.external_type, g.account_enabled, g.invitation_status, formatDate(g.created_at_ms), formatDate(g.last_sign_in_at, true), g.sponsor_display_name, g.sponsor_enabled, g.risk_score, g.risk_level, g.risk_factors.map((f) => f.label).join('; '), g.recommended_action, g.review_status, formatDate(g.last_reviewed_at)]),
@@ -76,7 +71,7 @@ export async function GET(req: NextRequest) {
     if (!canExportPrivileged(session.role)) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
     const detail = await getPrivilegedDetail(tenant.id, session.role, tenant.settings)
     body = csv([
-      ['Display name', 'Email', 'Class', 'Highest tier', 'Role', 'Assignment', 'Last sign-in', 'MFA method', 'Owner', 'Last reviewed', 'Risk score', 'Risk level'],
+      ['Display name', 'Email', 'Class', 'Highest tier', 'Role', 'Assignment', 'Last activity', 'MFA method', 'Owner', 'Last reviewed', 'Risk score', 'Risk level'],
       ...detail.holders.map((h) => [
         h.displayName,
         h.email,

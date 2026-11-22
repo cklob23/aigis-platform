@@ -4,7 +4,9 @@ import {
   CLASS_FACTOR_SETS,
   computeIdentityRisk,
   computeRisk,
+  dropOwnerWhenSponsorMissing,
   identityRiskPatch,
+  scoreFromFactors,
   type RiskInput,
 } from '@/lib/risk/engine'
 import type { PrivilegedRiskContext } from '@/lib/risk/privileged'
@@ -161,6 +163,28 @@ describe('computeIdentityRisk', () => {
     )
     expect(piled.score).toBe(100)
     expect(piled.recommendedAction).toBe('review')
+  })
+
+  it('skips privileged no_owner when no_sponsor already applies', () => {
+    const overlay = privilegedStub({
+      isPrivileged: true,
+      identityClass: 'external',
+      accountKind: 'guest',
+      ownerKind: 'none',
+      ownerIdentityId: null,
+      hasSponsor: false,
+      assignments: [{ assignmentType: 'active', memberType: 'direct', privilegeTier: 1 }],
+    })
+    const risk = computeIdentityRisk('external', input({ hasSponsor: false, privileged: overlay }), undefined, NOW)
+    expect(risk.factors.some((f) => f.key === 'no_sponsor')).toBe(true)
+    expect(risk.factors.some((f) => f.key === 'no_owner')).toBe(false)
+    expect(dropOwnerWhenSponsorMissing(risk.factors).some((f) => f.key === 'no_owner')).toBe(false)
+  })
+
+  it('derives level from the factor sum', () => {
+    expect(scoreFromFactors([{ points: 30 }, { points: 25 }, { points: 10 }])).toEqual({ score: 65, level: 'high' })
+    expect(scoreFromFactors([{ points: 80 }, { points: 40 }])).toEqual({ score: 100, level: 'critical' })
+    expect(scoreFromFactors([])).toEqual({ score: 0, level: 'low' })
   })
 
   it('dual-persist patch mirrors score, level, and recommended action onto the hub', () => {

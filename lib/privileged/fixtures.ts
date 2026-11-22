@@ -1,6 +1,17 @@
-import type { IdentityClass, RiskLevel } from '@/lib/types'
-import { TIER_0_DIRECTORY_ROLES } from '@/lib/privileged/tiers'
+import type { Guest, IdentityClass, RiskLevel } from '@/lib/types'
+import { OVERLAY_POINTS } from '@/lib/risk/privileged'
+import { applyCombinedGuestDisplay, privilegedOverlayContext } from '@/lib/privileged/score'
+import { CONTOSO_INTERNAL_USERS, withNorthwindMail } from '@/lib/demo/internal-users'
+import { DEMO_ACTIVATIONS_BY_EMAIL } from '@/lib/demo/privileged-activations'
+import {
+  EXCLUDED_TEMPLATE_IDS,
+  HELPDESK_ADMINISTRATOR_TEMPLATE_ID,
+  TIER_0_DIRECTORY_ROLES,
+  TIER_0_TEMPLATE_IDS,
+  TIER_2_FIXED_TEMPLATE_IDS,
+} from '@/lib/privileged/tiers'
 import { tier0RoleDescription } from '@/lib/privileged/copy'
+import { buildPrivilegedProfile, publicActivation, type PrivilegedIdentityProfile } from '@/lib/privileged/profile'
 import {
   buildHighestRiskHolders,
   buildPrivilegedHolders,
@@ -68,7 +79,7 @@ const T0_ROLE_DEFS: { id: string; name: (typeof TIER_0_DIRECTORY_ROLES)[number] 
 
 function otherRoles(customName: string, customDescription: string): PrivilegedRoleRow[] {
   return [
-    { id: 'role-helpdesk', display_name: 'Helpdesk Administrator', privilege_tier: 1, is_privileged: true, is_built_in: true, description: 'Can reset passwords for non-administrators.' },
+    { id: 'role-helpdesk', display_name: 'Helpdesk Administrator', privilege_tier: 1, is_privileged: true, is_built_in: true, description: 'Can reset passwords for non-administrators.', template_id: HELPDESK_ADMINISTRATOR_TEMPLATE_ID },
     { id: 'role-user-admin', display_name: 'User Administrator', privilege_tier: 1, is_privileged: true, is_built_in: true, description: 'Can manage users and groups.' },
     { id: 'role-security-admin', display_name: 'Security Administrator', privilege_tier: 1, is_privileged: true, is_built_in: true, description: 'Can read security information and reports, and manage security-related features.' },
     { id: 'role-exchange', display_name: 'Exchange Administrator', privilege_tier: 1, is_privileged: true, is_built_in: true, description: 'Can manage Exchange Online.' },
@@ -78,12 +89,12 @@ function otherRoles(customName: string, customDescription: string): PrivilegedRo
     { id: 'role-auth-admin', display_name: 'Authentication Administrator', privilege_tier: 1, is_privileged: true, is_built_in: true, description: 'Can set authentication methods for non-admins.' },
     { id: 'role-password', display_name: 'Password Administrator', privilege_tier: 1, is_privileged: true, is_built_in: true, description: 'Can reset passwords for non-administrators and Password Administrators.' },
     { id: 'role-custom', display_name: customName, privilege_tier: 1, is_privileged: true, is_built_in: false, description: customDescription },
-    { id: 'role-global-reader', display_name: 'Global Reader', privilege_tier: 2, is_privileged: true, is_built_in: true, description: 'Can read everything that a Global Administrator can.' },
-    { id: 'role-security-reader', display_name: 'Security Reader', privilege_tier: 2, is_privileged: true, is_built_in: true, description: 'Can read security information and reports.' },
+    { id: 'role-global-reader', display_name: 'Global Reader', privilege_tier: 2, is_privileged: true, is_built_in: true, description: 'Can read everything that a Global Administrator can.', template_id: TIER_2_FIXED_TEMPLATE_IDS['Global Reader'] },
+    { id: 'role-security-reader', display_name: 'Security Reader', privilege_tier: 2, is_privileged: true, is_built_in: true, description: 'Can read security information and reports.', template_id: TIER_2_FIXED_TEMPLATE_IDS['Security Reader'] },
     { id: 'role-reports-reader', display_name: 'Reports Reader', privilege_tier: 2, is_privileged: true, is_built_in: true, description: 'Can read sign-in and audit reports.' },
     { id: 'role-message-center', display_name: 'Message Center Reader', privilege_tier: 2, is_privileged: true, is_built_in: true, description: 'Can read Message Center posts.' },
-    { id: 'role-directory-readers', display_name: 'Directory Readers', privilege_tier: null, is_privileged: false, is_built_in: true, description: 'Can read basic directory information.' },
-    { id: 'role-guest-inviter', display_name: 'Guest Inviter', privilege_tier: null, is_privileged: false, is_built_in: true, description: 'Can invite guest users.' },
+    { id: 'role-directory-readers', display_name: 'Directory Readers', privilege_tier: null, is_privileged: false, is_built_in: true, description: 'Can read basic directory information.', template_id: EXCLUDED_TEMPLATE_IDS['Directory Readers'] },
+    { id: 'role-guest-inviter', display_name: 'Guest Inviter', privilege_tier: null, is_privileged: false, is_built_in: true, description: 'Can invite guest users.', template_id: EXCLUDED_TEMPLATE_IDS['Guest Inviter'] },
   ]
 }
 
@@ -96,6 +107,7 @@ function directoryRoles(customName: string, customDescription: string): Privileg
       is_privileged: true,
       is_built_in: true,
       description: tier0RoleDescription(row.name),
+      template_id: TIER_0_TEMPLATE_IDS[row.name],
     })),
     ...otherRoles(customName, customDescription),
   ]
@@ -114,9 +126,10 @@ const P2_IDENTITIES: PrivilegedIdentityRow[] = [
     dedicated_admin: true,
     owner_display_name: 'Identity team',
     last_reviewed_at: PRA_REVIEW,
-    last_activity_at: '2026-11-14T00:00:00.000Z',
+    last_activity_at: '2026-11-14T15:12:00.000Z',
     risk_score: 88,
     risk_level: 'critical',
+    activatedRoleKeys: ['Privileged Role Administrator'],
   }),
   identity('id-priya', 'Priya Nair', 'priya.nair@northwind.example', 'human_internal', 0, {
     auth_methods: [],
@@ -131,18 +144,27 @@ const P2_IDENTITIES: PrivilegedIdentityRow[] = [
     risk_level: 'medium',
   }),
   identity('id-grady', 'Grady Archie', 'grady.archie@fabrikam.example', 'external', 1, {
-    auth_methods: [],
+    auth_methods: ['microsoftAuthenticatorAuthenticationMethod'],
     last_reviewed_at: OVERDUE_GRADY,
-    last_activity_at: '2026-08-16T00:00:00.000Z',
+    last_activity_at: '2026-11-07T00:00:00.000Z',
     risk_score: 76,
     risk_level: 'high',
+    guestRisk: {
+      invitationStatus: 'Accepted',
+      createdAt: '2025-03-01T00:00:00.000Z',
+      lastSignInAt: '2026-11-07T00:00:00.000Z',
+      hasSponsor: false,
+      sponsorEnabled: null,
+      domainClassification: 'vendor',
+      memberships: [],
+    },
   }),
   identity('id-isaiah', 'Isaiah Langer', 'isaiah.langer@northwind.example', 'human_internal', 1, {
     last_activity_at: '2026-11-18T06:00:00.000Z',
     risk_score: 29,
     risk_level: 'low',
   }),
-  identity('id-hr-sync', 'Contoso-HR-Sync', null, 'non_human', 0, {
+  identity('id-hr-sync', 'Northwind-HR-Sync', null, 'non_human', 0, {
     auth_methods: null,
     app_id: '7f3c9a12-4d80-4c2e-9a11-0c8e4f00b21e',
     last_reviewed_at: OVERDUE_HR_SYNC,
@@ -173,12 +195,39 @@ const P2_IDENTITIES: PrivilegedIdentityRow[] = [
     risk_score: 27,
     risk_level: 'low',
   }),
+  identity('id-morgan', 'Morgan Blake', 'morgan.blake@woodgrove.example', 'external', 2, {
+    dedicated_admin: false,
+    owner_display_name: 'Pat Sponsor',
+    last_reviewed_at: LAST_REVIEW,
+    last_activity_at: '2026-11-18T09:00:00.000Z',
+    risk_score: 29,
+    risk_level: 'medium',
+    auth_methods: ['microsoftAuthenticatorAuthenticationMethod'],
+    guestRisk: {
+      invitationStatus: 'Accepted',
+      createdAt: '2025-08-01T00:00:00.000Z',
+      lastSignInAt: '2026-11-18T09:00:00.000Z',
+      hasSponsor: true,
+      sponsorEnabled: true,
+      domainClassification: 'vendor',
+      memberships: [],
+    },
+  }),
   identity('id-vendor', 'Fabrikam Vendor', 'vendor@fabrikam.example', 'external', 1, {
     last_reviewed_at: null,
     last_activity_at: '2026-06-01T00:00:00.000Z',
     risk_score: 64,
     risk_level: 'high',
     auth_methods: [],
+    guestRisk: {
+      invitationStatus: 'Accepted',
+      createdAt: '2025-06-01T00:00:00.000Z',
+      lastSignInAt: '2026-06-01T00:00:00.000Z',
+      hasSponsor: false,
+      sponsorEnabled: null,
+      domainClassification: 'vendor',
+      memberships: [],
+    },
   }),
 ]
 
@@ -192,9 +241,10 @@ const FABRIKAM_IDENTITIES: PrivilegedIdentityRow[] = [
     dedicated_admin: true,
     owner_display_name: 'Identity team',
     last_reviewed_at: PRA_REVIEW,
-    last_activity_at: '2026-11-14T00:00:00.000Z',
+    last_activity_at: '2026-11-14T15:12:00.000Z',
     risk_score: 81,
     risk_level: 'critical',
+    activatedRoleKeys: ['Privileged Role Administrator'],
   }),
   identity('fab-priya', 'Priya Nair', 'priya.nair@fabrikam.example', 'human_internal', 0, {
     auth_methods: [],
@@ -266,9 +316,8 @@ function assignment(
 
 const P2_ASSIGNMENTS: PrivilegedAssignmentRow[] = [
   assignment('asg-adele-ga', 'id-adele', 'role-ga'),
-  assignment('elig-adele-ga', 'id-adele', 'role-ga', { assignment_type: 'eligible', pim_status: 'Provisioned' }),
   assignment('asg-adele-helpdesk', 'id-adele', 'role-helpdesk'),
-  assignment('asg-lee-pra', 'id-lee', 'role-pra'),
+  assignment('asg-lee-pra', 'id-lee', 'role-pra', { assignment_type: 'eligible', pim_status: 'Provisioned' }),
   assignment('asg-priya-paa', 'id-priya', 'role-paa'),
   assignment('elig-megan-user', 'id-megan', 'role-user-admin', { assignment_type: 'eligible', pim_status: 'Provisioned' }),
   assignment('asg-grady-helpdesk', 'id-grady', 'role-helpdesk'),
@@ -278,13 +327,14 @@ const P2_ASSIGNMENTS: PrivilegedAssignmentRow[] = [
   assignment('asg-nestor-ex', 'id-nestor', 'role-exchange'),
   assignment('asg-lynne-sr', 'id-lynne', 'role-security-reader'),
   assignment('elig-diego-app', 'id-diego', 'role-app', { assignment_type: 'eligible', pim_status: 'Provisioned' }),
+  assignment('asg-morgan-gr', 'id-morgan', 'role-global-reader'),
   assignment('asg-vendor-helpdesk', 'id-vendor', 'role-helpdesk'),
   assignment('asg-adele-dir-readers', 'id-adele', 'role-directory-readers'),
 ]
 
 const FABRIKAM_ASSIGNMENTS: PrivilegedAssignmentRow[] = [
   assignment('fab-asg-adele-ga', 'fab-adele', 'role-ga'),
-  assignment('fab-asg-lee-pra', 'fab-lee', 'role-pra'),
+  assignment('fab-asg-lee-pra', 'fab-lee', 'role-pra', { assignment_type: 'eligible', pim_status: 'Provisioned' }),
   assignment('fab-asg-priya-paa', 'fab-priya', 'role-paa'),
   assignment('fab-asg-megan-user', 'fab-megan', 'role-user-admin'),
   assignment('fab-asg-isaiah-sec', 'fab-isaiah', 'role-security-admin'),
@@ -296,12 +346,6 @@ const FABRIKAM_ASSIGNMENTS: PrivilegedAssignmentRow[] = [
 ]
 
 const P2_FINDINGS: PrivilegedFindingCount[] = [
-  {
-    finding_type: 'too_many_global_admins',
-    title: '7 Global Administrators',
-    count: 7,
-    explanation: 'Microsoft guidance is fewer than five.',
-  },
   {
     finding_type: 'no_strong_auth',
     title: '5 privileged identities without strong authentication',
@@ -336,12 +380,6 @@ const P2_FINDINGS: PrivilegedFindingCount[] = [
 
 const NO_P2_FINDINGS: PrivilegedFindingCount[] = [
   {
-    finding_type: 'too_many_global_admins',
-    title: '6 Global Administrators',
-    count: 6,
-    explanation: 'Microsoft guidance is fewer than five.',
-  },
-  {
     finding_type: 'guest_with_role',
     title: 'External identity with an admin role',
     count: 1,
@@ -350,9 +388,10 @@ const NO_P2_FINDINGS: PrivilegedFindingCount[] = [
 ]
 
 const P2_TOP_FACTORS: Record<string, string> = {
-  'id-lee': 'Permanent Tier 0 assignment',
+  'id-lee': 'Holds a Tier 0 directory role',
   'id-priya': 'No strong authentication',
-  'id-grady': 'Dormant 90d+',
+  'id-grady': 'External identity with an admin role',
+  'id-morgan': 'External identity with an admin role',
   'id-hr-sync': 'Service principal with a role',
 }
 
@@ -365,12 +404,12 @@ const FABRIKAM_TOP_FACTORS: Record<string, string> = {
 type RoleStat = { holders: number; permanent: number; eligible: number; lastReviewAt: string | null }
 
 const P2_ROLE_STATS: Record<string, RoleStat> = {
-  'Global Administrator': { holders: 7, permanent: 5, eligible: 2, lastReviewAt: LAST_REVIEW },
+  'Global Administrator': { holders: 1, permanent: 1, eligible: 0, lastReviewAt: LAST_REVIEW },
   'Privileged Role Administrator': { holders: 2, permanent: 1, eligible: 1, lastReviewAt: PRA_REVIEW },
   'Privileged Authentication Administrator': { holders: 2, permanent: 1, eligible: 1, lastReviewAt: LAST_REVIEW },
   'Conditional Access Administrator': { holders: 3, permanent: 1, eligible: 2, lastReviewAt: LAST_REVIEW },
-  'Application Administrator': { holders: 4, permanent: 2, eligible: 1, lastReviewAt: null },
-  'Cloud Application Administrator': { holders: 3, permanent: 1, eligible: 2, lastReviewAt: null },
+  'Application Administrator': { holders: 7, permanent: 5, eligible: 2, lastReviewAt: null },
+  'Cloud Application Administrator': { holders: 5, permanent: 2, eligible: 3, lastReviewAt: null },
   'Hybrid Identity Administrator': { holders: 2, permanent: 1, eligible: 1, lastReviewAt: LAST_REVIEW },
   'Directory Synchronization Accounts': { holders: 1, permanent: 1, eligible: 0, lastReviewAt: LAST_REVIEW },
   'Domain Name Administrator': { holders: 1, permanent: 0, eligible: 1, lastReviewAt: null },
@@ -497,13 +536,15 @@ export function privilegedFixture(pimAvailable: boolean, now = NOW): PrivilegedD
     const computed = summarizePrivileged(FABRIKAM_IDENTITIES, FABRIKAM_ASSIGNMENTS, FABRIKAM_ROLES, false, NO_P2_FINDINGS, now)
     return {
       summary: noP2Summary(computed),
-      holders: buildPrivilegedHolders(FABRIKAM_IDENTITIES, FABRIKAM_ASSIGNMENTS, FABRIKAM_ROLES, false, FABRIKAM_TOP_FACTORS),
-      highestRisk: buildHighestRiskHolders(buildPrivilegedHolders(FABRIKAM_IDENTITIES, FABRIKAM_ASSIGNMENTS, FABRIKAM_ROLES, false, FABRIKAM_TOP_FACTORS)),
+      holders: buildPrivilegedHolders(FABRIKAM_IDENTITIES, FABRIKAM_ASSIGNMENTS, FABRIKAM_ROLES, false, FABRIKAM_TOP_FACTORS, now),
+      highestRisk: buildHighestRiskHolders(
+        buildPrivilegedHolders(FABRIKAM_IDENTITIES, FABRIKAM_ASSIGNMENTS, FABRIKAM_ROLES, false, FABRIKAM_TOP_FACTORS, now),
+      ),
       roles: buildPrivilegedRoles(FABRIKAM_ROLES, FABRIKAM_ASSIGNMENTS, FABRIKAM_IDENTITIES, false),
     }
   }
   const computed = summarizePrivileged(P2_IDENTITIES, P2_ASSIGNMENTS, P2_ROLES, true, P2_FINDINGS, now)
-  const holders = buildPrivilegedHolders(P2_IDENTITIES, P2_ASSIGNMENTS, P2_ROLES, true, P2_TOP_FACTORS)
+  const holders = buildPrivilegedHolders(P2_IDENTITIES, P2_ASSIGNMENTS, P2_ROLES, true, P2_TOP_FACTORS, now)
   return {
     summary: p2Summary(computed),
     holders,
@@ -520,5 +561,323 @@ export const FIXTURE_PRIVILEGE_TIERS: Record<string, 0 | 1 | 2> = {
   'guest-id-vendor': 1,
   'id-grady': 1,
   'id-vendor': 1,
+  'id-morgan': 2,
+  'guest-id-morgan': 2,
   'fab-vendor': 1,
+}
+
+const LEE_ACTIVATIONS = [
+  publicActivation({
+    id: 'act-lee-1',
+    roleName: 'Privileged Role Administrator',
+    activatedAt: '2026-11-14T09:12:00.000Z',
+    durationMinutes: 120,
+    result: 'success',
+    ticket: 'INC-4412',
+    approval: 'Approved',
+    justification: 'Emergency break-glass for clinic outage',
+  }),
+  publicActivation({
+    id: 'act-lee-2',
+    roleName: 'Privileged Role Administrator',
+    activatedAt: '2026-11-02T16:40:00.000Z',
+    durationMinutes: 60,
+    result: 'success',
+    ticket: null,
+    approval: 'Approved',
+    justification: 'Must never reach the AI prompt',
+  }),
+]
+
+export function privilegedProfileFixture(
+  pimAvailable = true,
+  identityId = pimAvailable ? 'id-lee' : 'fab-lee',
+): PrivilegedIdentityProfile {
+  const identities = pimAvailable ? P2_IDENTITIES : FABRIKAM_IDENTITIES
+  const assignments = pimAvailable ? P2_ASSIGNMENTS : FABRIKAM_ASSIGNMENTS
+  const roles = pimAvailable ? P2_ROLES : FABRIKAM_ROLES
+  const identity = identities.find((row) => row.id === identityId)
+  if (!identity) throw new Error(`fixture identity ${identityId} missing`)
+  return buildPrivilegedProfile({
+    identity: {
+      ...identity,
+      recommended_action: 'review',
+      owner_kind: identity.owner_display_name ? 'assigned' : 'none',
+      first_seen_at: '2026-02-01T00:00:00.000Z',
+      ms_object_id: `ms-${identity.id}`,
+    },
+    assignments,
+    roles,
+    pimAvailable,
+    activations: pimAvailable && (identityId === 'id-lee' || identityId === 'fab-lee') ? LEE_ACTIVATIONS : [],
+    reviews: [
+      {
+        id: `rev-${identityId}`,
+        name: 'Q3 privileged access certification',
+        status: 'completed',
+        decision: 'certified',
+        dueAt: nextPrivilegedReviewDueAt(identity.last_reviewed_at ?? LAST_REVIEW),
+        decidedAt: identity.last_reviewed_at ?? LAST_REVIEW,
+      },
+    ],
+    requests: [],
+    explanation: null,
+    now: NOW,
+  })
+}
+
+/** Northwind demo Adele Admin: standing GA and eligible Privileged Role Administrator. */
+export function privilegedDemoAdeleProfile(pimAvailable = true): PrivilegedIdentityProfile {
+  const adele = withNorthwindMail(CONTOSO_INTERNAL_USERS[1]!)
+  const identityId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
+  const roles = pimAvailable ? P2_ROLES : FABRIKAM_ROLES
+  const assignments = [
+    assignment('asg-adele-ga', identityId, 'role-ga'),
+    ...(pimAvailable
+      ? [assignment('elig-adele-pra', identityId, 'role-pra', { assignment_type: 'eligible', pim_status: 'Provisioned' })]
+      : []),
+  ]
+  return buildPrivilegedProfile({
+    identity: {
+      ...identity(identityId, adele.display_name, adele.email, 'human_internal', 0, {
+        dedicated_admin: true,
+        last_activity_at: '2026-11-18T10:04:00.000Z',
+        risk_score: 71,
+        risk_level: 'high',
+        auth_methods: ['microsoftAuthenticatorAuthenticationMethod'],
+      }),
+      recommended_action: 'review',
+      owner_kind: 'none',
+      first_seen_at: '2026-02-01T00:00:00.000Z',
+      ms_object_id: adele.ms_object_id,
+    },
+    assignments,
+    roles,
+    pimAvailable,
+    activations: pimAvailable ? (DEMO_ACTIVATIONS_BY_EMAIL[adele.email] ?? []) : [],
+    reviews: [
+      {
+        id: 'rev-adele-1',
+        name: 'Q3 privileged access certification',
+        status: 'completed',
+        decision: 'certified',
+        dueAt: '2026-09-30T00:00:00.000Z',
+        decidedAt: LAST_REVIEW,
+      },
+    ],
+    requests: [],
+    explanation: null,
+    now: NOW,
+  })
+}
+
+export function gradyGuestFixture(storedScore = 76): Guest {
+  const profile = privilegedProfileFixture(true, 'id-grady')
+  const overlayKeys = new Set(Object.keys(OVERLAY_POINTS))
+  const storedFactors = profile.factors.filter((factor) => !overlayKeys.has(factor.key))
+  const identity = P2_IDENTITIES.find((row) => row.id === 'id-grady')
+  if (!identity) throw new Error('fixture identity id-grady missing')
+  const stored: Guest = {
+    id: 'guest-id-grady',
+    tenant_id: 'tenant-northwind',
+    identity_id: 'id-grady',
+    ms_object_id: 'ms-id-grady',
+    display_name: 'Grady Archie',
+    email: 'grady.archie@fabrikam.example',
+    upn: 'grady.archie@fabrikam.example',
+    domain: 'fabrikam.example',
+    external_domain_id: null,
+    company_name: 'Fabrikam',
+    company_source: 'graph',
+    account_enabled: true,
+    invitation_status: 'Accepted',
+    user_type: 'Guest',
+    created_at_ms: '2025-03-01T00:00:00.000Z',
+    last_sign_in_at: '2026-11-07T00:00:00.000Z',
+    last_non_interactive_sign_in_at: null,
+    auth_methods: ['microsoftAuthenticatorAuthenticationMethod'],
+    sponsor_ms_object_id: null,
+    sponsor_display_name: null,
+    sponsor_email: null,
+    sponsor_enabled: null,
+    identity_class: 'external',
+    external_type: 'b2b_guest',
+    classification_evidence: [],
+    external_organization_id: null,
+    risk_score: storedScore,
+    risk_level: 'high',
+    risk_factors: storedFactors,
+    recommended_action: 'review',
+    review_status: 'never_reviewed',
+    last_reviewed_at: '2026-08-01T00:00:00.000Z',
+    first_seen_at: '2025-03-01T00:00:00.000Z',
+    last_seen_at: '2026-11-07T00:00:00.000Z',
+    removed_at: null,
+  }
+  const overlay = privilegedOverlayContext(identity, P2_ASSIGNMENTS, P2_ROLES, {
+    pimAvailable: true,
+    globalAdminCount: 1,
+  })
+  return applyCombinedGuestDisplay(stored, overlay, NOW)
+}
+
+function unprivilegedGuest(over: Partial<Guest> & Pick<Guest, 'id' | 'identity_id' | 'display_name' | 'email' | 'domain' | 'risk_score' | 'risk_level'>): Guest {
+  return {
+    tenant_id: 'tenant-northwind',
+    ms_object_id: `ms-${over.identity_id}`,
+    upn: over.email,
+    external_domain_id: null,
+    company_name: over.domain,
+    company_source: 'graph',
+    account_enabled: true,
+    invitation_status: 'Accepted',
+    user_type: 'Guest',
+    created_at_ms: '2025-06-01T00:00:00.000Z',
+    last_sign_in_at: '2026-11-01T00:00:00.000Z',
+    last_non_interactive_sign_in_at: null,
+    auth_methods: ['microsoftAuthenticatorAuthenticationMethod'],
+    sponsor_ms_object_id: 'sponsor-1',
+    sponsor_display_name: 'Pat Sponsor',
+    sponsor_email: 'pat@northwind.example',
+    sponsor_enabled: true,
+    identity_class: 'external',
+    external_type: 'b2b_guest',
+    classification_evidence: [],
+    external_organization_id: null,
+    risk_factors: [{ key: 'stale', label: 'Stale guest', points: over.risk_score }],
+    recommended_action: 'review',
+    review_status: 'never_reviewed',
+    last_reviewed_at: LAST_REVIEW,
+    first_seen_at: '2025-06-01T00:00:00.000Z',
+    last_seen_at: '2026-11-01T00:00:00.000Z',
+    removed_at: null,
+    ...over,
+  }
+}
+
+export function vendorGuestFixture(storedScore = 64): Guest {
+  const profile = privilegedProfileFixture(true, 'id-vendor')
+  const overlayKeys = new Set(Object.keys(OVERLAY_POINTS))
+  const storedFactors = profile.factors.filter((factor) => !overlayKeys.has(factor.key))
+  const identity = P2_IDENTITIES.find((row) => row.id === 'id-vendor')
+  if (!identity) throw new Error('fixture identity id-vendor missing')
+  const stored: Guest = {
+    id: 'guest-id-vendor',
+    tenant_id: 'tenant-northwind',
+    identity_id: 'id-vendor',
+    ms_object_id: 'ms-id-vendor',
+    display_name: 'Fabrikam Vendor',
+    email: 'vendor@fabrikam.example',
+    upn: 'vendor@fabrikam.example',
+    domain: 'fabrikam.example',
+    external_domain_id: null,
+    company_name: 'Fabrikam',
+    company_source: 'graph',
+    account_enabled: true,
+    invitation_status: 'Accepted',
+    user_type: 'Guest',
+    created_at_ms: '2025-06-01T00:00:00.000Z',
+    last_sign_in_at: '2026-06-01T00:00:00.000Z',
+    last_non_interactive_sign_in_at: null,
+    auth_methods: [],
+    sponsor_ms_object_id: null,
+    sponsor_display_name: null,
+    sponsor_email: null,
+    sponsor_enabled: null,
+    identity_class: 'external',
+    external_type: 'b2b_guest',
+    classification_evidence: [],
+    external_organization_id: null,
+    risk_score: storedScore,
+    risk_level: 'high',
+    risk_factors: storedFactors,
+    recommended_action: 'review',
+    review_status: 'never_reviewed',
+    last_reviewed_at: null,
+    first_seen_at: '2025-06-01T00:00:00.000Z',
+    last_seen_at: '2026-06-01T00:00:00.000Z',
+    removed_at: null,
+  }
+  const overlay = privilegedOverlayContext(identity, P2_ASSIGNMENTS, P2_ROLES, {
+    pimAvailable: true,
+    globalAdminCount: 1,
+  })
+  return applyCombinedGuestDisplay(stored, overlay, NOW)
+}
+
+export function morganGuestFixture(): Guest {
+  const profile = privilegedProfileFixture(true, 'id-morgan')
+  const overlayKeys = new Set(Object.keys(OVERLAY_POINTS))
+  const storedFactors = profile.factors.filter((factor) => !overlayKeys.has(factor.key))
+  const identity = P2_IDENTITIES.find((row) => row.id === 'id-morgan')
+  if (!identity) throw new Error('fixture identity id-morgan missing')
+  const stored: Guest = {
+    id: 'guest-id-morgan',
+    tenant_id: 'tenant-northwind',
+    identity_id: 'id-morgan',
+    ms_object_id: 'ms-id-morgan',
+    display_name: 'Morgan Blake',
+    email: 'morgan.blake@woodgrove.example',
+    upn: 'morgan.blake@woodgrove.example',
+    domain: 'woodgrove.example',
+    external_domain_id: null,
+    company_name: 'Woodgrove',
+    company_source: 'graph',
+    account_enabled: true,
+    invitation_status: 'Accepted',
+    user_type: 'Guest',
+    created_at_ms: '2025-08-01T00:00:00.000Z',
+    last_sign_in_at: '2026-11-18T09:00:00.000Z',
+    last_non_interactive_sign_in_at: null,
+    auth_methods: ['microsoftAuthenticatorAuthenticationMethod'],
+    sponsor_ms_object_id: '11111111-1111-1111-1111-111111111101',
+    sponsor_display_name: 'Pat Sponsor',
+    sponsor_email: 'pat@northwind.example',
+    sponsor_enabled: true,
+    identity_class: 'external',
+    external_type: 'b2b_guest',
+    classification_evidence: [],
+    external_organization_id: null,
+    risk_score: 18,
+    risk_level: 'low',
+    risk_factors: storedFactors,
+    recommended_action: 'review',
+    review_status: 'approved',
+    last_reviewed_at: LAST_REVIEW,
+    first_seen_at: '2025-08-01T00:00:00.000Z',
+    last_seen_at: '2026-11-18T09:00:00.000Z',
+    removed_at: null,
+  }
+  const overlay = privilegedOverlayContext(identity, P2_ASSIGNMENTS, P2_ROLES, {
+    pimAvailable: true,
+    globalAdminCount: 1,
+  })
+  return applyCombinedGuestDisplay(stored, overlay, NOW)
+}
+
+/** External identities sample: three privileged guests plus two stored-score unprivileged guests. */
+export function privilegedGuestListFixture(): Guest[] {
+  return [
+    gradyGuestFixture(),
+    vendorGuestFixture(),
+    morganGuestFixture(),
+    unprivilegedGuest({
+      id: 'guest-jordan',
+      identity_id: 'id-jordan',
+      display_name: 'Jordan Hale',
+      email: 'jordan.hale@meridianlaw.com',
+      domain: 'meridianlaw.com',
+      risk_score: 41,
+      risk_level: 'medium',
+    }),
+    unprivilegedGuest({
+      id: 'guest-sam',
+      identity_id: 'id-sam',
+      display_name: 'Sam Ortiz',
+      email: 'sam.ortiz@nimbusdesign.studio',
+      domain: 'nimbusdesign.studio',
+      risk_score: 22,
+      risk_level: 'low',
+    }),
+  ]
 }

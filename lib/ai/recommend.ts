@@ -1,5 +1,13 @@
-import { DEFAULT_AI_SETTINGS, type AiSettings, type RecommendedAction, type RiskFactor } from '@/lib/types'
+import { DEFAULT_AI_SETTINGS, type AiSettings, type AssignmentRecommendedChange, type RecommendedAction, type RiskFactor } from '@/lib/types'
 import { RECOMMENDATION_LABELS, RECOMMENDATION_SUMMARY, topFactors } from '@/lib/risk/recommendation'
+import { PRIVILEGED_REVIEW_SUMMARY } from '@/lib/privileged/copy'
+
+const ASSIGNMENT_CHANGE_LABEL: Record<AssignmentRecommendedChange, string> = {
+  convert_to_eligible: 'Convert to eligible',
+  remove_assignment: 'Remove assignment',
+  move_to_dedicated_admin: 'Move to dedicated admin',
+  reduce_scope: 'Reduce scope',
+}
 
 export type ExplanationCitation = {
   key: string
@@ -31,6 +39,25 @@ export function mergeAiSettings(settings: Record<string, unknown>, enabled: bool
   }
 }
 
+export function aiExplainEnabled(settings: Record<string, unknown> | null | undefined) {
+  const ai = parseAiSettings(settings)
+  return ai.enabled === true && ai.mode === 'on_demand'
+}
+
+/** Fields the explainer may see. Activation justifications are dropped here. */
+export function buildExplainPromptInput(input: {
+  recommendedAction: RecommendedAction
+  factors: RiskFactor[]
+  displayName?: string | null
+  activations?: Array<Record<string, unknown>>
+}) {
+  return {
+    recommendedAction: input.recommendedAction,
+    factors: input.factors.map((f) => ({ key: f.key, label: f.label, points: f.points, detail: f.detail })),
+    displayName: input.displayName ?? null,
+  }
+}
+
 /**
  * Deterministic explanation of the existing risk recommendation.
  * Cites score factors. Recommend only: never changes access.
@@ -39,24 +66,45 @@ export function explainRecommendation(input: {
   recommendedAction: RecommendedAction
   factors: RiskFactor[]
   displayName?: string | null
+  kind?: 'guest' | 'privileged'
+  activations?: Array<Record<string, unknown>>
+  assignments?: { roleName: string; recommendedChange: AssignmentRecommendedChange | null }[]
 }): RecommendationExplanation {
-  const citations = topFactors(input.factors, 5).map((f) => ({
+  const prompt = buildExplainPromptInput(input)
+  const citations = topFactors(
+    prompt.factors.filter((factor) => factor.points > 0),
+    5,
+  ).map((f) => ({
     key: f.key,
     label: f.label,
     points: f.points,
     detail: f.detail,
   }))
-  const who = input.displayName?.trim() || 'This identity'
-  const action = RECOMMENDATION_LABELS[input.recommendedAction]
-  const summary = RECOMMENDATION_SUMMARY[input.recommendedAction]
+  const who = prompt.displayName?.trim() || 'This identity'
+  const action = RECOMMENDATION_LABELS[prompt.recommendedAction]
+  const summary =
+    input.kind === 'privileged' && prompt.recommendedAction === 'review'
+      ? PRIVILEGED_REVIEW_SUMMARY
+      : RECOMMENDATION_SUMMARY[prompt.recommendedAction]
   const cited =
     citations.length === 0
       ? 'No risk factors are recorded, so the score does not justify a change.'
-      : citations.map((c) => `${c.label} (+${c.points}${c.detail ? `, ${c.detail}` : ''})`).join('; ')
+      : `Top score factors: ${citations.map((c) => `${c.label} (+${c.points}${c.detail ? `, ${c.detail}` : ''})`).join('; ')}.`
+  const changes = (input.assignments ?? []).filter((row) => row.recommendedChange)
+  const assignmentNote =
+    input.kind !== 'privileged'
+      ? ''
+      : changes.length === 0
+        ? ' No assignment changes are recommended.'
+        : ` Recommended assignment changes: ${changes
+            .map((row) => `${row.roleName}: ${ASSIGNMENT_CHANGE_LABEL[row.recommendedChange!]}`)
+            .join('; ')}.`
+  const privilegedNote =
+    input.kind === 'privileged' ? ' AIGIS never changes anything in Entra.' : ''
   return {
     title: `Recommended action: ${action}`,
-    body: `${who}: ${summary} This is an explanation of the current score, not an access change. A human with remediation permission still has to approve any Entra change. Cited factors: ${cited}`,
-    recommendedAction: input.recommendedAction,
+    body: `${who}: ${summary} This is an explanation of the current score, not an access change. A human with remediation permission still has to approve any Entra change.${privilegedNote} ${cited}${assignmentNote}`,
+    recommendedAction: prompt.recommendedAction,
     citations,
   }
 }

@@ -14,9 +14,9 @@ export function PrivilegedReviewsCard({
   const overdue = privilegedReviewDueOverdue(reviews.nextDueAt)
   const nextDue = reviews.nextDueAt
     ? overdue
-      ? `${formatDate(reviews.nextDueAt)} · overdue`
+      ? `Overdue since ${formatDate(reviews.nextDueAt)}`
       : formatDate(reviews.nextDueAt)
-    : '—'
+    : 'None'
   return (
     <Card>
       <CardHeader>
@@ -40,7 +40,7 @@ export function PrivilegedReviewsCard({
         </div>
         <div className="flex flex-col gap-0.5">
           <span className="text-muted-foreground text-xs uppercase tracking-wide">Last completed</span>
-          <span className="tnum font-medium">{reviews.lastCompletedAt ? formatDate(reviews.lastCompletedAt) : '—'}</span>
+          <span className="tnum font-medium">{reviews.lastCompletedAt ? formatDate(reviews.lastCompletedAt) : 'None'}</span>
         </div>
         <div className="flex flex-col gap-0.5">
           <span className="text-muted-foreground text-xs uppercase tracking-wide">Next due</span>
