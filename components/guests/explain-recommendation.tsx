@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { Sparkles } from 'lucide-react'
+import { FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { explainGuestRecommendation, explainIdentityRecommendation } from '@/lib/actions/ai'
 import { EXPLAIN_FAILED, EXPLAIN_GENERATED_CAPTION } from '@/lib/privileged/copy'
@@ -65,7 +65,7 @@ export function ExplainRecommendation({
         <p className="text-sm font-medium">Recommendation explanation</p>
         {show && (
           <Button size="sm" variant="outline" disabled={pending} onClick={run}>
-            <Sparkles data-icon="inline-start" />
+            <FileText data-icon="inline-start" />
             {actionLabel}
           </Button>
         )}

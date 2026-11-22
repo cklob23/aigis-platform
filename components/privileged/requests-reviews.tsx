@@ -8,9 +8,9 @@ import { cn } from '@/lib/utils'
 const PREVIEW_TAG =
   'rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground'
 
-function reviewOutcome(decision: string | null, status: string, dueAt: string | null) {
+function reviewOutcome(decision: string | null, status: string, decidedAt: string | null) {
   const label = titleCase(decision ?? status)
-  const when = dueAt ? formatDate(dueAt) : null
+  const when = decidedAt ? formatDate(decidedAt) : null
   return when ? `${label} ${when}` : label
 }
 
@@ -28,7 +28,7 @@ export function RequestsReviews({ profile }: { profile: PrivilegedIdentityProfil
           {profile.reviews.map((r) => (
             <div key={r.id} className="flex flex-col gap-0.5 py-2 text-sm">
               <span className="text-pretty">{r.name}</span>
-              <span className="text-muted-foreground text-xs">{reviewOutcome(r.decision, r.status, r.dueAt)}</span>
+              <span className="text-muted-foreground text-xs">{reviewOutcome(r.decision, r.status, r.decidedAt)}</span>
             </div>
           ))}
           {profile.reviews.length === 0 && <p className="text-muted-foreground text-sm">Never included in a privileged review.</p>}

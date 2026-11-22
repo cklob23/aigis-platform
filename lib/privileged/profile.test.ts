@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { directoryScopeLabel, parseStoredActivations, publicActivation } from '@/lib/privileged/profile'
+import { activationApprovalLabel, directoryScopeLabel, parseStoredActivations, publicActivation } from '@/lib/privileged/profile'
 import { privilegedDemoAdeleProfile, privilegedProfileFixture } from '@/lib/privileged/fixtures'
 
 describe('directoryScopeLabel', () => {
@@ -59,6 +59,32 @@ describe('privilegedProfileFixture', () => {
     const profile = privilegedProfileFixture(false)
     expect(profile.pimAvailable).toBe(false)
     expect(profile.activations).toEqual([])
+  })
+})
+
+describe('activationApprovalLabel', () => {
+  it('shows Approved (2 of 2) for Tier 0 without inventing names', () => {
+    expect(
+      activationApprovalLabel({ roleName: 'Privileged Role Administrator', approval: 'Approved' }),
+    ).toBe('Approved (2 of 2)')
+    expect(
+      activationApprovalLabel({ roleName: 'Global Administrator', approval: 'Approved', approverNames: [] }),
+    ).toBe('Approved (2 of 2)')
+  })
+
+  it('uses recorded approver names when present', () => {
+    expect(
+      activationApprovalLabel({
+        roleName: 'Privileged Role Administrator',
+        approval: 'Approved',
+        approverNames: ['Alex Wilber'],
+      }),
+    ).toBe('Alex Wilber')
+  })
+
+  it('does not upgrade non-Tier 0 approvals', () => {
+    expect(activationApprovalLabel({ roleName: 'User Administrator', approval: 'Approved' })).toBe('Approved')
+    expect(activationApprovalLabel({ roleName: 'Global Administrator', approval: null })).toBe('None')
   })
 })
 

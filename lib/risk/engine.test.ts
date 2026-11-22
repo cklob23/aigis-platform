@@ -5,6 +5,7 @@ import {
   computeIdentityRisk,
   computeRisk,
   identityRiskPatch,
+  scoreFromFactors,
   type RiskInput,
 } from '@/lib/risk/engine'
 import type { PrivilegedRiskContext } from '@/lib/risk/privileged'
@@ -161,6 +162,12 @@ describe('computeIdentityRisk', () => {
     )
     expect(piled.score).toBe(100)
     expect(piled.recommendedAction).toBe('review')
+  })
+
+  it('derives level from the factor sum', () => {
+    expect(scoreFromFactors([{ points: 30 }, { points: 25 }, { points: 10 }])).toEqual({ score: 65, level: 'high' })
+    expect(scoreFromFactors([{ points: 80 }, { points: 40 }])).toEqual({ score: 100, level: 'critical' })
+    expect(scoreFromFactors([])).toEqual({ score: 0, level: 'low' })
   })
 
   it('dual-persist patch mirrors score, level, and recommended action onto the hub', () => {

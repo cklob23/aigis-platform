@@ -6,6 +6,7 @@ import { db } from '@/lib/supabase/admin'
 import { audit } from '@/lib/audit'
 import { requireIdentityId } from '@/lib/identity/governance'
 import { aiExplainEnabled, explainRecommendation } from '@/lib/ai/recommend'
+import { getPrivilegedIdentity } from '@/lib/data/privileged'
 import { mustWrite } from '@/lib/supabase/write'
 import type { Guest, RecommendedAction, RiskFactor } from '@/lib/types'
 
@@ -77,31 +78,17 @@ export async function explainIdentityRecommendation(identityId: string): Promise
     assertCan(session, 'view')
     if (!aiExplainEnabled(tenant.settings)) return { ok: false, error: 'AI explanations are off. Enable them in Settings first.' }
 
+    const profile = await getPrivilegedIdentity(tenant.id, session.role, tenant.settings, identityId, {
+      isDemo: session.demo,
+    })
+    if (!profile) return { ok: false, error: 'Identity not found' }
+
     const supabase = db()
-    const { data: identity } = await supabase
-      .from('identities')
-      .select('id,display_name,primary_email,recommended_action,is_privileged')
-      .eq('tenant_id', tenant.id)
-      .eq('id', identityId)
-      .is('removed_at', null)
-      .maybeSingle()
-    if (!identity) return { ok: false, error: 'Identity not found' }
-
-    const { data: score } = await supabase
-      .from('risk_scores')
-      .select('factors')
-      .eq('tenant_id', tenant.id)
-      .eq('identity_id', identityId)
-      .order('calculated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    const factors = (Array.isArray(score?.factors) ? score?.factors : []) as RiskFactor[]
     const explanation = explainRecommendation({
-      recommendedAction: (identity.recommended_action as RecommendedAction) ?? 'review',
-      factors,
-      displayName: (identity.display_name as string | null) ?? (identity.primary_email as string | null),
-      kind: identity.is_privileged ? 'privileged' : 'guest',
+      recommendedAction: profile.recommendedAction,
+      factors: profile.factors,
+      displayName: profile.displayName ?? profile.email,
+      kind: 'privileged',
     })
 
     mustWrite(
@@ -121,7 +108,7 @@ export async function explainIdentityRecommendation(identityId: string): Promise
       action: 'ai.explained',
       targetType: 'identity',
       targetId: identityId,
-      targetLabel: (identity.primary_email as string | null) ?? (identity.display_name as string | null) ?? identityId,
+      targetLabel: profile.email ?? profile.displayName ?? identityId,
       newState: { recommended_action: explanation.recommendedAction, citations: explanation.citations.map((c) => c.key) },
       reason: 'On-demand explanation. Recommend only; no access change.',
     })

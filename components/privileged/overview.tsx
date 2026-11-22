@@ -139,7 +139,7 @@ export function PrivilegedOverview({
                     <TableHead>Class</TableHead>
                     <TableHead>Highest tier</TableHead>
                     <TableHead>Roles</TableHead>
-                    <TableHead>Last sign-in</TableHead>
+                    <TableHead>Last activity</TableHead>
                     <TableHead>Risk</TableHead>
                   </TableRow>
                 </TableHeader>

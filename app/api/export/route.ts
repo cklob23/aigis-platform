@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
     if (!canExportPrivileged(session.role)) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
     const detail = await getPrivilegedDetail(tenant.id, session.role, tenant.settings)
     body = csv([
-      ['Display name', 'Email', 'Class', 'Highest tier', 'Role', 'Assignment', 'Last sign-in', 'MFA method', 'Owner', 'Last reviewed', 'Risk score', 'Risk level'],
+      ['Display name', 'Email', 'Class', 'Highest tier', 'Role', 'Assignment', 'Last activity', 'MFA method', 'Owner', 'Last reviewed', 'Risk score', 'Risk level'],
       ...detail.holders.map((h) => [
         h.displayName,
         h.email,

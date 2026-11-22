@@ -98,8 +98,8 @@ describe('HoldersTable state column', () => {
     expect(html.indexOf('>Class<')).toBeLessThan(html.indexOf('>Tier<'))
     expect(html.indexOf('>Tier<')).toBeLessThan(html.indexOf('>Roles<'))
     expect(html.indexOf('>Roles<')).toBeLessThan(html.indexOf('>Assignment<'))
-    expect(html.indexOf('>Assignment<')).toBeLessThan(html.indexOf('>Last sign-in<'))
-    expect(html.indexOf('>Last sign-in<')).toBeLessThan(html.indexOf('>MFA<'))
+    expect(html.indexOf('>Assignment<')).toBeLessThan(html.indexOf('>Last activity<'))
+    expect(html.indexOf('>Last activity<')).toBeLessThan(html.indexOf('>MFA<'))
     expect(html.indexOf('>MFA<')).toBeLessThan(html.indexOf('>Owner<'))
     expect(html.indexOf('>Owner<')).toBeLessThan(html.indexOf('>Risk<'))
   })
@@ -204,6 +204,7 @@ describe('High risk badge contrast', () => {
     expect(src).toContain("high: 'bg-[#FFEDD5] text-[#92400E]")
     expect(src).not.toContain('text-[#B45309]')
     expect(src).not.toContain('text-[#9A3412]')
+    expect(src).toContain("level !== 'high' && 'opacity-80'")
   })
 })
 
@@ -223,6 +224,19 @@ describe('placeholder copy', () => {
 })
 
 describe('IdentityProfile', () => {
+  it('uses a neutral Explain icon', () => {
+    const src = readFileSync(path.join(root, 'components/guests/explain-recommendation.tsx'), 'utf8')
+    expect(src).toContain('FileText')
+    expect(src).not.toContain('Sparkles')
+    expect(src).not.toContain('text-destructive')
+  })
+
+  it('stacks PIM history below sm', () => {
+    const src = readFileSync(path.join(root, 'components/privileged/activation-history.tsx'), 'utf8')
+    expect(src).toContain('hidden sm:block')
+    expect(src).toContain('sm:hidden')
+  })
+
   it('renders mock 04 fields for a P2 identity', () => {
     const html = renderToStaticMarkup(
       createElement(IdentityProfile, {
@@ -237,14 +251,43 @@ describe('IdentityProfile', () => {
     expect(html).toContain('Standing (permanent) Tier 0 assignment')
     expect(html).toContain('>Explain<')
     expect(html).not.toContain('Explain with AI')
+    expect(html).not.toContain('Sparkles')
     expect(html).toContain('data-explain-state="empty"')
     expect(html).toContain(OPEN_ROLE_DEFINITION)
     expect(html).toContain('No end')
     expect(html).toContain('Last activity')
     expect(html).toContain('Microsoft Authenticator')
+    expect(html).toContain('Approved (2 of 2)')
+    expect(html).toContain('Certified Sep 12, 2026')
+    expect(html).not.toContain('Sep 30')
+    expect(html).toContain('sm:hidden')
     expect(html).toContain(PRIVILEGED_REVIEW_SUMMARY)
     expect(html).not.toContain('Emergency break-glass')
     expect(html).not.toMatch(/justification/i)
+    const profile = privilegedProfileFixture(true)
+    expect(html).toContain(String(profile.riskScore))
+    expect(html).not.toContain('>88<')
+    expect(html).not.toContain('critical')
+  })
+
+  it('shows the same overlay score on overview and profile for Lee Gu', () => {
+    const detail = privilegedFixture(true)
+    const profile = privilegedProfileFixture(true, 'id-lee')
+    const overviewHtml = renderToStaticMarkup(
+      createElement(PrivilegedOverview, { summary: detail.summary, highestRisk: detail.highestRisk }),
+    )
+    const holdersHtml = renderToStaticMarkup(
+      createElement(HoldersTableStatic, {
+        holders: detail.holders.filter((row) => row.identityId === 'id-lee'),
+        pimAvailable: true,
+      }),
+    )
+    const profileHtml = renderToStaticMarkup(createElement(IdentityProfile, { profile, aiEnabled: true }))
+    expect(profile.riskScore).toBe(detail.holders.find((row) => row.identityId === 'id-lee')?.riskScore)
+    expect(profileHtml).toContain(String(profile.riskScore))
+    expect(holdersHtml).toContain(String(profile.riskScore))
+    const onOverview = detail.highestRisk.some((row) => row.identityId === 'id-lee')
+    if (onOverview) expect(overviewHtml).toContain(String(profile.riskScore))
   })
 
   it('hides the explain panel when AI is off', () => {
@@ -257,7 +300,6 @@ describe('IdentityProfile', () => {
     expect(html).not.toContain('Recommendation explanation')
     expect(html).not.toContain('Explain with AI')
     expect(html).not.toContain('AI explanations are off')
-    expect(html).not.toContain('text-destructive')
   })
 
   it('hides PIM activation history without P2 and still shows Explain when AI is on', () => {
@@ -286,7 +328,6 @@ describe('IdentityProfile', () => {
     expect(html).toContain('data-explain-state="error"')
     expect(html).toMatch(/Couldn(?:'|&#x27;)t generate an explanation/)
     expect(html).toContain('Try again')
-    expect(html).not.toContain('text-destructive')
     expect(html).not.toContain('AI explanations are off')
   })
 

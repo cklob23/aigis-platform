@@ -10,7 +10,6 @@ import {
 } from '@/lib/privileged/tiers'
 import { tier0RoleDescription } from '@/lib/privileged/copy'
 import { buildPrivilegedProfile, publicActivation, type PrivilegedIdentityProfile } from '@/lib/privileged/profile'
-import { ACTIVE_TIER0_UNKNOWN_LABEL } from '@/lib/risk/privileged'
 import {
   buildHighestRiskHolders,
   buildPrivilegedHolders,
@@ -508,13 +507,15 @@ export function privilegedFixture(pimAvailable: boolean, now = NOW): PrivilegedD
     const computed = summarizePrivileged(FABRIKAM_IDENTITIES, FABRIKAM_ASSIGNMENTS, FABRIKAM_ROLES, false, NO_P2_FINDINGS, now)
     return {
       summary: noP2Summary(computed),
-      holders: buildPrivilegedHolders(FABRIKAM_IDENTITIES, FABRIKAM_ASSIGNMENTS, FABRIKAM_ROLES, false, FABRIKAM_TOP_FACTORS),
-      highestRisk: buildHighestRiskHolders(buildPrivilegedHolders(FABRIKAM_IDENTITIES, FABRIKAM_ASSIGNMENTS, FABRIKAM_ROLES, false, FABRIKAM_TOP_FACTORS)),
+      holders: buildPrivilegedHolders(FABRIKAM_IDENTITIES, FABRIKAM_ASSIGNMENTS, FABRIKAM_ROLES, false, FABRIKAM_TOP_FACTORS, now),
+      highestRisk: buildHighestRiskHolders(
+        buildPrivilegedHolders(FABRIKAM_IDENTITIES, FABRIKAM_ASSIGNMENTS, FABRIKAM_ROLES, false, FABRIKAM_TOP_FACTORS, now),
+      ),
       roles: buildPrivilegedRoles(FABRIKAM_ROLES, FABRIKAM_ASSIGNMENTS, FABRIKAM_IDENTITIES, false),
     }
   }
   const computed = summarizePrivileged(P2_IDENTITIES, P2_ASSIGNMENTS, P2_ROLES, true, P2_FINDINGS, now)
-  const holders = buildPrivilegedHolders(P2_IDENTITIES, P2_ASSIGNMENTS, P2_ROLES, true, P2_TOP_FACTORS)
+  const holders = buildPrivilegedHolders(P2_IDENTITIES, P2_ASSIGNMENTS, P2_ROLES, true, P2_TOP_FACTORS, now)
   return {
     summary: p2Summary(computed),
     holders,
@@ -533,18 +534,6 @@ export const FIXTURE_PRIVILEGE_TIERS: Record<string, 0 | 1 | 2> = {
   'id-vendor': 1,
   'fab-vendor': 1,
 }
-
-function standingTier0Factor(pimAvailable: boolean) {
-  return pimAvailable
-    ? { key: 'permanent_tier0', label: 'Standing (permanent) Tier 0 assignment', points: 30 }
-    : { key: 'active_tier0_unknown', label: ACTIVE_TIER0_UNKNOWN_LABEL, points: 30 }
-}
-
-const LEE_BASE_FACTORS = [
-  { key: 'tier0_role', label: 'Holds a Tier 0 directory role', points: 25 },
-  { key: 'privileged_review_overdue', label: 'Privileged access review overdue', points: 10, detail: 'Last review 143 days ago' },
-  { key: 'strong_auth_ok', label: 'Strong authentication registered', points: 0 },
-]
 
 const LEE_ACTIVATIONS = [
   publicActivation({
@@ -586,13 +575,9 @@ export function privilegedProfileFixture(
       first_seen_at: '2026-02-01T00:00:00.000Z',
       ms_object_id: `ms-${identity.id}`,
     },
-    assignments: assignments.filter((row) => row.principal_identity_id === identity.id),
+    assignments,
     roles,
     pimAvailable,
-    factors:
-      identityId.endsWith('lee') || identityId === 'id-lee'
-        ? [standingTier0Factor(pimAvailable), ...LEE_BASE_FACTORS]
-        : [standingTier0Factor(pimAvailable), LEE_BASE_FACTORS[0]!],
     activations: pimAvailable && (identityId === 'id-lee' || identityId === 'fab-lee') ? LEE_ACTIVATIONS : [],
     reviews: [
       {
@@ -600,7 +585,8 @@ export function privilegedProfileFixture(
         name: 'Q3 privileged access certification',
         status: 'completed',
         decision: 'certified',
-        dueAt: LAST_REVIEW,
+        dueAt: '2026-09-30T00:00:00.000Z',
+        decidedAt: LAST_REVIEW,
       },
     ],
     requests: [],
@@ -637,12 +623,6 @@ export function privilegedDemoAdeleProfile(pimAvailable = true): PrivilegedIdent
     assignments,
     roles,
     pimAvailable,
-    factors: [
-      standingTier0Factor(pimAvailable),
-      { key: 'tier0_role', label: 'Holds a Tier 0 directory role', points: 25 },
-      { key: 'no_owner', label: 'Privileged identity has no owner', points: 10 },
-      { key: 'strong_auth_ok', label: 'Strong authentication registered', points: 0 },
-    ],
     activations: pimAvailable ? (DEMO_ACTIVATIONS_BY_EMAIL[adele.email] ?? []) : [],
     reviews: [
       {
@@ -650,7 +630,8 @@ export function privilegedDemoAdeleProfile(pimAvailable = true): PrivilegedIdent
         name: 'Q3 privileged access certification',
         status: 'completed',
         decision: 'certified',
-        dueAt: LAST_REVIEW,
+        dueAt: '2026-09-30T00:00:00.000Z',
+        decidedAt: LAST_REVIEW,
       },
     ],
     requests: [],

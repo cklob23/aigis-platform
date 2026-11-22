@@ -38,6 +38,12 @@ export function levelFor(score: number): RiskLevel {
   return 'low'
 }
 
+/** Display score is the sum of the factors shown, capped at 100. */
+export function scoreFromFactors(factors: Array<{ points: number }>): { score: number; level: RiskLevel } {
+  const score = Math.min(100, factors.reduce((sum, factor) => sum + factor.points, 0))
+  return { score, level: levelFor(score) }
+}
+
 export type IdentityRiskResult = {
   score: number
   level: RiskLevel

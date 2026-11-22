@@ -43,9 +43,9 @@ const ET = 'America/New_York'
 
 /** Clock times on privileged profile surfaces. Always Eastern Time, labeled ET. Date-only values still use formatDate. */
 export function formatDateTimeEt(iso: string | null | undefined) {
-  if (!iso) return '—'
+  if (!iso) return 'None'
   const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
+  if (Number.isNaN(d.getTime())) return 'None'
   const stamp = d.toLocaleString('en-US', {
     timeZone: ET,
     month: 'short',

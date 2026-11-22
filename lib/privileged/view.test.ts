@@ -7,6 +7,7 @@ import {
   combinedStateLabel,
   filterHolders,
   holderIdentifier,
+  mfaMethodLabel,
   groupHoldersByIdentity,
   nextPrivilegedReviewDueAt,
   privilegedReviewDueOverdue,
@@ -307,6 +308,14 @@ describe('live reviews stay empty', () => {
     expect(summary.reviews.lastCompletedAt).toBeNull()
     expect(summary.reviews.nextDueAt).toBeNull()
     expect(summary.reviews.openRequests).toBe(0)
+  })
+})
+
+describe('mfaMethodLabel', () => {
+  it('uses None when methods are missing', () => {
+    expect(mfaMethodLabel('human_internal', null)).toBe('None')
+    expect(mfaMethodLabel('human_internal', [])).toBe('None')
+    expect(mfaMethodLabel('non_human', null)).toBe('n/a')
   })
 })
 

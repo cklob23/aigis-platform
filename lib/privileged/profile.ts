@@ -11,8 +11,9 @@ import {
   type PrivilegedIdentityRow,
   type PrivilegedRoleRow,
 } from '@/lib/privileged/view'
+import { TIER_0_DIRECTORY_ROLES } from '@/lib/privileged/tiers'
+import { countGlobalAdmins, privilegedDisplayRisk } from '@/lib/privileged/score'
 import { DAILY_USE_DAYS, DORMANT_ADMIN_DAYS, daysSince, overlayRecommendedAction, recommendAssignmentChange } from '@/lib/risk/privileged'
-import { levelFor } from '@/lib/risk/engine'
 
 export const ASSIGNMENT_CHANGE_LABEL: Record<AssignmentRecommendedChange, string> = {
   convert_to_eligible: 'Convert to eligible',
@@ -29,6 +30,7 @@ export type PrivilegedActivation = {
   result: string | null
   ticket: string | null
   approval: string | null
+  approverNames?: string[] | null
 }
 
 export type PrivilegedProfileAssignment = {
@@ -52,6 +54,7 @@ export type PrivilegedProfileReview = {
   status: string
   decision: string | null
   dueAt: string | null
+  decidedAt: string | null
 }
 
 export type PrivilegedProfileRequest = {
@@ -101,7 +104,11 @@ export function directoryScopeLabel(scopeId: string | null | undefined) {
 
 /** Drop activation justifications before anything is shown or sent to explain. */
 export function publicActivation(
-  row: Omit<PrivilegedActivation, 'approval'> & { justification?: string | null; approval?: string | null },
+  row: Omit<PrivilegedActivation, 'approval' | 'approverNames'> & {
+    justification?: string | null
+    approval?: string | null
+    approverNames?: string[] | null
+  },
 ): PrivilegedActivation {
   return {
     id: row.id,
@@ -111,7 +118,17 @@ export function publicActivation(
     result: row.result,
     ticket: row.ticket,
     approval: row.approval ?? null,
+    approverNames: row.approverNames ?? null,
   }
+}
+
+/** Known names when recorded. Otherwise T0 activations show the two-approver count, never invented names. */
+export function activationApprovalLabel(row: Pick<PrivilegedActivation, 'roleName' | 'approval' | 'approverNames'>) {
+  const names = (row.approverNames ?? []).filter((name) => name.trim().length > 0)
+  if (names.length > 0) return names.join(', ')
+  const isTier0 = (TIER_0_DIRECTORY_ROLES as readonly string[]).includes(row.roleName)
+  if (isTier0 && row.approval && /^approved$/i.test(row.approval.trim())) return 'Approved (2 of 2)'
+  return row.approval?.trim() || 'None'
 }
 
 export function parseStoredActivations(value: unknown): PrivilegedActivation[] {
@@ -130,6 +147,9 @@ export function parseStoredActivations(value: unknown): PrivilegedActivation[] {
         result: typeof row.result === 'string' ? row.result : null,
         ticket: typeof row.ticket === 'string' ? row.ticket : null,
         approval: typeof row.approval === 'string' ? row.approval : null,
+        approverNames: Array.isArray(row.approverNames)
+          ? row.approverNames.filter((name): name is string => typeof name === 'string')
+          : null,
         justification: typeof row.justification === 'string' ? row.justification : null,
       }),
     )
@@ -147,7 +167,6 @@ export function buildPrivilegedProfile(input: {
   assignments: PrivilegedAssignmentRow[]
   roles: PrivilegedRoleRow[]
   pimAvailable: boolean
-  factors?: RiskFactor[]
   activations?: PrivilegedActivation[]
   reviews?: PrivilegedProfileReview[]
   requests?: PrivilegedProfileRequest[]
@@ -158,6 +177,7 @@ export function buildPrivilegedProfile(input: {
   const identity = input.identity
   const roleById = new Map(input.roles.map((row) => [row.id, row]))
   const held = input.assignments.filter((row) => {
+    if (row.principal_identity_id !== identity.id) return false
     const role = roleById.get(row.directory_role_id)
     return Boolean(role?.is_privileged)
   })
@@ -205,10 +225,17 @@ export function buildPrivilegedProfile(input: {
     }
   })
 
-  const factors = input.factors ?? []
-  const derivedScore = Math.min(100, factors.reduce((sum, f) => sum + f.points, 0))
-  const riskScore = factors.length > 0 ? derivedScore : identity.risk_score
-  const riskLevel = factors.length > 0 ? levelFor(derivedScore) : identity.risk_level
+  const display = privilegedDisplayRisk({
+    identity,
+    assignments: held,
+    roles: input.roles,
+    pimAvailable: input.pimAvailable,
+    globalAdminCount: countGlobalAdmins(input.assignments, input.roles),
+    now,
+  })
+  const factors = display.factors
+  const riskScore = display.score
+  const riskLevel = display.level
   const storedAction = identity.recommended_action ?? null
   const recommendedAction = overlayRecommendedAction(riskLevel, storedAction ?? 'keep')
 

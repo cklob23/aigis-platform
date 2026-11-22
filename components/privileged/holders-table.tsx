@@ -181,7 +181,7 @@ function HoldersMarkup({ rows, pimAvailable }: { rows: PrivilegedHolder[]; pimAv
                 <TableHead>Tier</TableHead>
                 <TableHead>Roles</TableHead>
                 <TableHead>Assignment</TableHead>
-                <TableHead>Last sign-in</TableHead>
+                <TableHead>Last activity</TableHead>
                 <TableHead>MFA</TableHead>
                 <TableHead>Owner</TableHead>
                 <TableHead>Risk</TableHead>

@@ -13,7 +13,9 @@ export function RiskBadge({ level, score, className }: { level: RiskLevel; score
     <span className={cn('inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 font-medium text-xs capitalize ring-1 ring-inset', STYLES[level], className)}>
       <span aria-hidden className={cn('size-1.5 rounded-full', level === 'critical' ? 'bg-destructive' : level === 'high' ? 'bg-warning' : level === 'medium' ? 'bg-primary' : 'bg-muted-foreground')} />
       {level}
-      {typeof score === 'number' && <span className="tnum font-mono opacity-80">{score}</span>}
+      {typeof score === 'number' && (
+        <span className={cn('tnum font-mono', level !== 'high' && 'opacity-80')}>{score}</span>
+      )}
     </span>
   )
 }

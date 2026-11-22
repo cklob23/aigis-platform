@@ -17,7 +17,7 @@ import {
   type PrivilegedRoleRow,
   type PrivilegedSummary,
 } from '@/lib/privileged/view'
-import type { IdentityOwnerKind, RecommendedAction, RiskFactor } from '@/lib/types'
+import type { IdentityOwnerKind, RecommendedAction } from '@/lib/types'
 
 type IdentityQueryRow = PrivilegedIdentityRow & { owner_display_name?: string | null }
 type AssignmentQueryRow = PrivilegedAssignmentRow & { removed_at?: string | null }
@@ -44,7 +44,7 @@ async function loadPrivilegedRows(tenantId: string, settings: Record<string, unk
       supabase
         .from('identities')
         .select(
-          'id,display_name,primary_email,identity_class,is_privileged,privilege_tier,last_reviewed_at,last_activity_at,risk_score,risk_level,status,owner_display_name',
+          'id,display_name,primary_email,identity_class,is_privileged,privilege_tier,last_reviewed_at,last_activity_at,risk_score,risk_level,status,owner_display_name,owner_kind',
         )
         .eq('tenant_id', tenantId)
         .is('removed_at', null)
@@ -94,6 +94,7 @@ async function loadPrivilegedRows(tenantId: string, settings: Record<string, unk
     return {
       ...row,
       owner_display_name: row.owner_display_name ?? null,
+      owner_kind: row.owner_kind ?? null,
       dedicated_admin: Boolean(attrs?.dedicated_admin),
       auth_methods: authMethodsFromAttrs(attrs),
       app_id: row.identity_class === 'non_human' ? attrAppId ?? account?.source_object_id ?? null : null,
@@ -177,13 +178,12 @@ export async function getPrivilegedIdentity(
     .maybeSingle()
   if (!identity) return null
 
-  const [assignments, roles, accounts, score, reviews, remediations, explanation] = await Promise.all([
+  const [assignments, roles, accounts, reviews, remediations, explanation] = await Promise.all([
     fetchAllById<PrivilegedAssignmentRow>('role_assignments identity', () =>
       supabase
         .from('role_assignments')
         .select('id,principal_identity_id,assignment_type,member_type,pim_status,starts_at,ends_at,directory_scope_id,directory_role_id')
         .eq('tenant_id', tenantId)
-        .eq('principal_identity_id', identityId)
         .is('removed_at', null),
     ),
     fetchAllById<PrivilegedRoleRow>('directory_roles identity', () =>
@@ -203,16 +203,8 @@ export async function getPrivilegedIdentity(
         .is('removed_at', null),
     ),
     supabase
-      .from('risk_scores')
-      .select('factors')
-      .eq('tenant_id', tenantId)
-      .eq('identity_id', identityId)
-      .order('calculated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase
       .from('review_items')
-      .select('id,status,decision,review:access_reviews(id,name,status,due_at)')
+      .select('id,status,decision,decided_at,review:access_reviews(id,name,status,due_at)')
       .eq('tenant_id', tenantId)
       .eq('identity_id', identityId)
       .order('created_at', { ascending: false }),
@@ -246,6 +238,7 @@ export async function getPrivilegedIdentity(
       status: (row.status as string) ?? review?.status ?? 'pending',
       decision: (row.decision as string | null) ?? null,
       dueAt: review?.due_at ?? null,
+      decidedAt: (row.decided_at as string | null) ?? null,
     }
   })
   const requestRows = (remediations.data ?? []).map((row) => ({
@@ -280,7 +273,6 @@ export async function getPrivilegedIdentity(
     assignments,
     roles,
     pimAvailable,
-    factors: (Array.isArray(score.data?.factors) ? score.data?.factors : []) as RiskFactor[],
     activations,
     reviews: reviewRows,
     requests: requestRows,
